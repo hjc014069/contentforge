@@ -189,7 +189,6 @@ export default function Home() {
         }
       }
 
-      // 마지막 buffer 처리
       const lastTrimmed = buffer.trim();
       if (lastTrimmed) {
         try {
@@ -232,7 +231,7 @@ export default function Home() {
             멀티에이전트 콘텐츠 팩토리
           </h1>
           <p className="text-gray-400 text-sm mt-2">
-            Stage 5 — 멀티에이전트 + 멀티프로바이더 (자동 백업 전환)
+            멀티에이전트 + 멀티프로바이더 (자동 백업 전환)
           </p>
         </header>
 
