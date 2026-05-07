@@ -20,13 +20,30 @@ export type ContentRequest = {
   photos?: PhotoInput[];
 };
 
+// 콘텐츠 카테고리 (Planner가 자동 판별)
+export type Category =
+  | "cafe"     // 카페
+  | "food"     // 음식·맛집
+  | "travel"   // 여행
+  | "daily"    // 일상
+  | "fashion"  // 패션·OOTD
+  | "beauty"   // 뷰티
+  | "fitness"  // 운동·헬스
+  | "other";   // 기타
+
+export const ALL_CATEGORIES: Category[] = [
+  "cafe", "food", "travel", "daily", "fashion", "beauty", "fitness", "other",
+];
+
 // Planner Agent 출력 — 모든 다른 에이전트가 공유하는 컨텍스트
 export type Context = {
-  target_audience: string;   // 누구에게 말하는지
-  tone_guideline: string;    // 톤 적용 가이드
-  key_messages: string[];    // 핵심 메시지 (3개)
-  scene_summary: string;     // 사진+주제 종합 요약
-  keywords: string[];        // 키워드 (5개)
+  category: Category;          // 자동 판별된 카테고리
+  category_label: string;       // 한국어 라벨 ("카페", "음식·맛집" 등)
+  target_audience: string;      // 누구에게 말하는지
+  tone_guideline: string;       // 톤 적용 가이드
+  key_messages: string[];       // 핵심 메시지 (3개)
+  scene_summary: string;        // 사진+주제 종합 요약
+  keywords: string[];           // 키워드 (5개)
 };
 
 // 어떤 LLM 프로바이더가 응답했는지 (Fallback Pattern용)

@@ -10,6 +10,7 @@
  */
 
 import { callWithFallback } from "@/lib/llm";
+import { getCategoryGuide } from "@/lib/categories";
 import type { Caption, Context, Tone, AgentMeta } from "@/types";
 
 const PRIMARY_PROVIDER = "github-models" as const;
@@ -99,7 +100,27 @@ export async function runSocial(
   context: Context,
   tone: Tone
 ): Promise<{ captions: Caption[]; agentMeta: AgentMeta }> {
-  const userPrompt = `[컨텍스트]
+  // 카테고리별 가이드 동적 주입
+  const guide = getCategoryGuide(context.category);
+  const categoryGuideBlock = `
+[카테고리: ${context.category_label}]
+- 작성 포커스: ${guide.caption_focus}
+- 자주 쓰는 이모지: ${guide.typical_emojis.join(" ") || "(특별한 이모지 없음)"}
+${
+  guide.caption_examples.length > 0
+    ? `- 이 카테고리에서 자연스러운 표현 예시: ${guide.caption_examples.map((e) => `"${e}"`).join(", ")}`
+    : ""
+}
+${
+  guide.avoid_for_category.length > 0
+    ? `- 이 카테고리에서 특히 피할 것: ${guide.avoid_for_category.join(", ")}`
+    : ""
+}
+`.trim();
+
+  const userPrompt = `${categoryGuideBlock}
+
+[컨텍스트]
 - target_audience: ${context.target_audience}
 - tone: ${tone}
 - tone_guideline: ${context.tone_guideline}
@@ -107,8 +128,8 @@ export async function runSocial(
 - scene_summary: ${context.scene_summary}
 - keywords: ${context.keywords.join(", ")}
 
-위 컨텍스트로 ${tone} 톤의 인스타그램 캡션 3안을 JSON으로 생성해.
-실제 한국 인스타 사용자가 쓴 것처럼 자연스럽게 (위 예시 같은 톤으로).`;
+위 카테고리(${context.category_label}) 특성과 ${tone} 톤을 모두 반영해서 인스타그램 캡션 3안을 JSON으로 생성해.
+실제 한국 인스타 사용자가 쓴 것처럼 자연스럽게.`;
 
   const fullPrompt = `${SYSTEM}\n\n${userPrompt}`;
   const response = await callWithFallback(fullPrompt, { jsonMode: true });

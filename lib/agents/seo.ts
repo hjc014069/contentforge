@@ -8,6 +8,7 @@
  */
 
 import { callWithFallback } from "@/lib/llm";
+import { getCategoryGuide } from "@/lib/categories";
 import type { HashtagTiers, Context, AgentMeta } from "@/types";
 
 const PRIMARY_PROVIDER = "github-models" as const;
@@ -47,13 +48,24 @@ const SYSTEM = `너는 한국 인스타그램에서 실제로 자주 쓰이는 �
 export async function runSeo(
   context: Context
 ): Promise<{ hashtags: HashtagTiers; agentMeta: AgentMeta }> {
-  const userPrompt = `[컨텍스트]
+  const guide = getCategoryGuide(context.category);
+
+  const categoryHint = `
+[카테고리: ${context.category_label}]
+- 이 카테고리에서 자주 쓰이는 broad 후보: ${guide.hashtag_seed_broad.join(", ")}
+- 이 카테고리에서 자주 쓰이는 niche 후보: ${guide.hashtag_seed_niche.join(", ")}
+(참고용 시드일 뿐. 그대로 베끼지 말고 컨텍스트에 맞게 조합·변형할 것)
+`.trim();
+
+  const userPrompt = `${categoryHint}
+
+[컨텍스트]
 - target_audience: ${context.target_audience}
 - scene_summary: ${context.scene_summary}
 - key_messages: ${context.key_messages.join(" / ")}
 - keywords: ${context.keywords.join(", ")}
 
-위 컨텍스트를 바탕으로 broad 5 + niche 10 + specific 5 = 총 20개의 해시태그를 JSON으로 생성해.`;
+위 카테고리 특성과 컨텍스트를 종합해 broad 5 + niche 10 + specific 5 = 총 20개의 해시태그를 JSON으로 생성해.`;
 
   const fullPrompt = `${SYSTEM}\n\n${userPrompt}`;
   const response = await callWithFallback(fullPrompt, { jsonMode: true });

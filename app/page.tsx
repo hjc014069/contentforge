@@ -231,7 +231,7 @@ export default function Home() {
             멀티에이전트 콘텐츠 팩토리
           </h1>
           <p className="text-gray-400 text-sm mt-2">
-            멀티에이전트 + 멀티프로바이더 (자동 백업 전환)
+            멀티에이전트 + 멀티프로바이더 + 카테고리 자동 판별
           </p>
         </header>
 
@@ -380,6 +380,20 @@ export default function Home() {
                   </span>
                 </div>
                 <div className="space-y-4">
+                  <div>
+                    <FieldLabel>📂 Category</FieldLabel>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">
+                        {context.category_label}
+                      </span>
+                      <span className="text-xs text-gray-500 font-mono">
+                        ({context.category})
+                      </span>
+                      <span className="text-[10px] text-emerald-400 ml-auto">
+                        ⚡ AI 자동 판별
+                      </span>
+                    </div>
+                  </div>
                   <Field label="🎯 Target Audience" value={context.target_audience} />
                   <Field label="🎨 Tone Guideline" value={context.tone_guideline} />
                   <div>
