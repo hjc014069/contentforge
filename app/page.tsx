@@ -369,8 +369,14 @@ export default function Home() {
                   <h2 className="text-lg font-semibold">
                     Planner — Context
                   </h2>
-                  <span className="ml-auto text-xs px-2 py-1 bg-purple-950 text-purple-300 rounded font-mono">
-                    Gemini Vision
+                  <span
+                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
+                      agentMetas.planner?.isFallback
+                        ? "bg-amber-950 text-amber-300 border border-amber-700/50"
+                        : "bg-purple-950 text-purple-300"
+                    }`}
+                  >
+                    {formatProviderLabel(agentMetas.planner, "Gemini Vision")}
                   </span>
                 </div>
                 <div className="space-y-4">
@@ -413,8 +419,14 @@ export default function Home() {
                   <h2 className="text-lg font-semibold">
                     Social — 캡션 {captions.length}안
                   </h2>
-                  <span className="ml-auto text-xs px-2 py-1 bg-emerald-950 text-emerald-300 rounded font-mono">
-                    GitHub Models GPT-4o
+                  <span
+                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
+                      agentMetas.social?.isFallback
+                        ? "bg-amber-950 text-amber-300 border border-amber-700/50"
+                        : "bg-emerald-950 text-emerald-300"
+                    }`}
+                  >
+                    {formatProviderLabel(agentMetas.social, "GitHub Models")}
                   </span>
                 </div>
                 <div className="space-y-3">
@@ -457,8 +469,14 @@ export default function Home() {
                   <h2 className="text-lg font-semibold">
                     SEO — 해시태그 20개
                   </h2>
-                  <span className="ml-auto text-xs px-2 py-1 bg-pink-950 text-pink-300 rounded font-mono">
-                    Groq Llama 3.3
+                  <span
+                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
+                      agentMetas.seo?.isFallback
+                        ? "bg-amber-950 text-amber-300 border border-amber-700/50"
+                        : "bg-pink-950 text-pink-300"
+                    }`}
+                  >
+                    {formatProviderLabel(agentMetas.seo, "GitHub Models")}
                   </span>
                 </div>
                 <div className="space-y-4">
@@ -504,8 +522,14 @@ export default function Home() {
                   <h2 className="text-lg font-semibold">
                     Visual — 사진 순서 추천
                   </h2>
-                  <span className="ml-auto text-xs px-2 py-1 bg-amber-950 text-amber-300 rounded font-mono">
-                    Gemini Vision
+                  <span
+                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
+                      agentMetas.visual?.isFallback
+                        ? "bg-orange-950 text-orange-300 border border-orange-700/50"
+                        : "bg-amber-950 text-amber-300"
+                    }`}
+                  >
+                    {formatProviderLabel(agentMetas.visual, "Gemini Vision")}
                   </span>
                 </div>
 
@@ -561,6 +585,32 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+/**
+ * agentMeta를 기반으로 사람이 읽기 쉬운 프로바이더 라벨 생성
+ * 예: "GitHub Models · gpt-4o-mini", "Gemini · gemini-2.5-flash (fallback)"
+ */
+function formatProviderLabel(
+  meta: AgentMeta | undefined,
+  defaultLabel: string
+): string {
+  if (!meta) return defaultLabel;
+  const providerNames: Record<string, string> = {
+    "github-models": "GitHub Models",
+    groq: "Groq",
+    gemini: "Gemini",
+  };
+  const provider = providerNames[meta.provider] ?? meta.provider;
+
+  // 모델명 짧게 정리 (가독성)
+  let modelShort = meta.model;
+  if (modelShort.startsWith("openai/")) modelShort = modelShort.slice(7);
+  if (modelShort.startsWith("meta/")) modelShort = modelShort.slice(5);
+  modelShort = modelShort.replace("-versatile", "").replace("-instant", "");
+
+  const tag = meta.isFallback ? " (fallback)" : "";
+  return `${provider} · ${modelShort}${tag}`;
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
