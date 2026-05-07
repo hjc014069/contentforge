@@ -8,14 +8,10 @@
  * 1장 이하면 호출하지 말 것 (orchestrator에서 처리).
  */
 
-import { callGeminiVision } from "@/lib/llm/gemini";
+import { callVisionWithFallback } from "@/lib/llm";
 import type { Context, PhotoOrder, PhotoInput, AgentMeta } from "@/types";
 
-const VISUAL_AGENT_META: AgentMeta = {
-  provider: "gemini",
-  model: "gemini-2.5-flash",
-  isFallback: false,
-};
+const VISION_PRIMARY = "gemini" as const;
 
 const SYSTEM = `너는 인스타그램 캐러셀(여러 장 슬라이드 게시물) 큐레이터야.
 입력된 사진들과 컨텍스트를 분석해 가장 적합한 순서를 추천한다.
@@ -80,9 +76,11 @@ export async function runVisual(
 위 ${photos.length}장의 사진을 보고 인스타 캐러셀의 최적 순서를 JSON으로 추천해.`;
 
   const fullPrompt = `${SYSTEM}\n\n${userPrompt}`;
-  const raw = await callGeminiVision(fullPrompt, photos, { jsonMode: true });
+  const response = await callVisionWithFallback(fullPrompt, photos, {
+    jsonMode: true,
+  });
 
-  const cleaned = raw
+  const cleaned = response.content
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -102,10 +100,16 @@ export async function runVisual(
     // position 기준 정렬 (UI에서 그대로 쓸 수 있게)
     parsed.items.sort((a, b) => a.position - b.position);
 
-    return { photoOrder: parsed, agentMeta: VISUAL_AGENT_META };
+    const agentMeta: AgentMeta = {
+      provider: response.provider,
+      model: response.model,
+      isFallback: response.provider !== VISION_PRIMARY,
+    };
+
+    return { photoOrder: parsed, agentMeta };
   } catch (e) {
     throw new Error(
-      `Visual JSON parsing failed.\nRaw output:\n${raw}\nError: ${
+      `Visual JSON parsing failed.\nRaw output:\n${response.content}\nError: ${
         e instanceof Error ? e.message : e
       }`
     );

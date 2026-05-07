@@ -1,19 +1,18 @@
 /**
  * Planner Agent
  * - 입력: 사진(선택) + 주제 + 톤
- * - 출력: Context (다른 모든 에이전트가 공유할 공통 컨텍스트)
+ * - 출력: Context + AgentMeta
  *
- * 사진이 있으면 Gemini Vision으로 분석, 없으면 Gemini 텍스트만 사용.
+ * Fallback 적용:
+ *  - 사진 있을 때 (Vision): Gemini → GitHub Models GPT-4o-mini Vision
+ *  - 사진 없을 때 (텍스트): GitHub Models → Groq → Gemini
  */
 
-import { callGemini, callGeminiVision } from "@/lib/llm/gemini";
+import { callWithFallback, callVisionWithFallback } from "@/lib/llm";
 import type { Context, ContentRequest, AgentMeta } from "@/types";
 
-const PLANNER_AGENT_META: AgentMeta = {
-  provider: "gemini",
-  model: "gemini-2.5-flash",
-  isFallback: false,
-};
+const VISION_PRIMARY = "gemini" as const;
+const TEXT_PRIMARY = "github-models" as const;
 
 const PLANNER_SYSTEM = `너는 인스타그램 콘텐츠 기획 전문가야.
 입력된 사진과 주제, 톤을 바탕으로 다른 AI 에이전트들이 함께 사용할 "공통 컨텍스트"를 만든다.
@@ -84,13 +83,13 @@ ${topicLine}
 
   const fullPrompt = `${PLANNER_SYSTEM}\n\n${userPrompt}`;
 
-  const raw =
-    photoCount > 0
-      ? await callGeminiVision(fullPrompt, req.photos!, { jsonMode: true })
-      : await callGemini(fullPrompt, { jsonMode: true });
+  // Vision (사진 있음) vs Text (사진 없음) 분기 — 각자 다른 fallback chain
+  const usingVision = photoCount > 0;
+  const response = usingVision
+    ? await callVisionWithFallback(fullPrompt, req.photos!, { jsonMode: true })
+    : await callWithFallback(fullPrompt, { jsonMode: true });
 
-  // jsonMode를 강제했더라도 안전하게 markdown wrapping 제거
-  const cleaned = raw
+  const cleaned = response.content
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
@@ -99,7 +98,6 @@ ${topicLine}
   try {
     const parsed = JSON.parse(cleaned) as Context;
 
-    // 최소 검증
     if (
       !parsed.target_audience ||
       !parsed.tone_guideline ||
@@ -110,10 +108,17 @@ ${topicLine}
       throw new Error("Missing required fields in Planner output");
     }
 
-    return { context: parsed, agentMeta: PLANNER_AGENT_META };
+    const primary = usingVision ? VISION_PRIMARY : TEXT_PRIMARY;
+    const agentMeta: AgentMeta = {
+      provider: response.provider,
+      model: response.model,
+      isFallback: response.provider !== primary,
+    };
+
+    return { context: parsed, agentMeta };
   } catch (e) {
     throw new Error(
-      `Planner JSON parsing failed.\nRaw output:\n${raw}\nError: ${
+      `Planner JSON parsing failed.\nRaw output:\n${response.content}\nError: ${
         e instanceof Error ? e.message : e
       }`
     );
