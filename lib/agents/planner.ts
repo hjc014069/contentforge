@@ -107,10 +107,14 @@ export async function runPlanner(
       ? "(이미지를 함께 분석해 시각적 요소를 반영)"
       : "(사진 없음 — 주제와 톤만으로 추론)";
 
+  const notesBlock = req.notes && req.notes.length > 0
+    ? `\n사용자 추가 메모: "${req.notes}"\n(이 메모를 scene_summary, key_messages, keywords 에 자연스럽게 반영할 것)`
+    : "";
+
   const userPrompt = `이제 다음 입력에 대해 JSON을 생성해.
 
 ${topicLine}
-톤: ${req.tone}
+톤: ${req.tone}${notesBlock}
 사진: ${photoCount}장 ${photoNote}`;
 
   const fullPrompt = `${PLANNER_SYSTEM}\n\n${userPrompt}`;

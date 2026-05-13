@@ -1,21 +1,21 @@
 /**
  * Orchestrator — ContentForge의 심장 ★
  *
- * 멀티에이전트 흐름을 조율하면서 진행 상황과 프로바이더 정보를 실시간 발신.
- *
- * 1) Planner가 공통 Context 생성 → planner.start/done (provider 정보 포함)
- * 2) Social + SEO + Visual 이 같은 Context로 병렬 작업
- *    각각 시작/완료 시점에 이벤트 발신 (Fallback 발생 시 백업 프로바이더 정보 전송)
+ * 멀티에이전트 흐름을 모드별로 분기:
+ *   1) Planner 가 공통 Context 생성
+ *   2) instagram 모드: Social + SEO + Visual 병렬
+ *      blog 모드     : Writer + SEO + Visual 병렬
  *
  * 발표 포인트:
  *  - Promise.all 한 줄 = 멀티에이전트 병렬의 본질
- *  - callWithFallback (lib/llm/index.ts) = 멀티 프로바이더 신뢰성
+ *  - 모드 분기 = 같은 입력으로 다른 포맷 생성 (인스타/블로그)
  */
 
 import { runPlanner } from "@/lib/agents/planner";
 import { runSocial } from "@/lib/agents/social";
 import { runSeo } from "@/lib/agents/seo";
 import { runVisual } from "@/lib/agents/visual";
+import { runWriter } from "@/lib/agents/writer";
 import type {
   ContentRequest,
   ProgressCallback,
@@ -28,9 +28,10 @@ export async function runPipeline(
 ): Promise<void> {
   const start = Date.now();
   const photoCount = req.photos?.length ?? 0;
+  const mode = req.mode ?? "instagram";
 
   try {
-    // [1단계] Planner — 모든 에이전트가 공유할 컨텍스트 생성
+    // [1단계] Planner
     onProgress({ type: "planner.start" });
     const plannerResult = await runPlanner(req);
     onProgress({
@@ -39,17 +40,7 @@ export async function runPipeline(
       agentMeta: plannerResult.agentMeta,
     });
 
-    // [2단계] Social + SEO + Visual 병렬 실행 ★
-    const socialPromise = (async () => {
-      onProgress({ type: "social.start" });
-      const result = await runSocial(plannerResult.context, req.tone);
-      onProgress({
-        type: "social.done",
-        captions: result.captions,
-        agentMeta: result.agentMeta,
-      });
-    })();
-
+    // [2단계] 모드별 분기 ★
     const seoPromise = (async () => {
       onProgress({ type: "seo.start" });
       const result = await runSeo(plannerResult.context);
@@ -74,7 +65,39 @@ export async function runPipeline(
       });
     })();
 
-    await Promise.all([socialPromise, seoPromise, visualPromise]);
+    if (mode === "blog") {
+      // 블로그 모드: Writer + SEO + Visual 병렬
+      const writerPromise = (async () => {
+        onProgress({ type: "writer.start" });
+        const result = await runWriter(
+          plannerResult.context,
+          req.topic,
+          req.tone,
+          photoCount,
+          req.notes
+        );
+        onProgress({
+          type: "writer.done",
+          blog: result.blog,
+          agentMeta: result.agentMeta,
+        });
+      })();
+
+      await Promise.all([writerPromise, seoPromise, visualPromise]);
+    } else {
+      // 인스타 모드: Social + SEO + Visual 병렬
+      const socialPromise = (async () => {
+        onProgress({ type: "social.start" });
+        const result = await runSocial(plannerResult.context, req.tone, req.notes);
+        onProgress({
+          type: "social.done",
+          captions: result.captions,
+          agentMeta: result.agentMeta,
+        });
+      })();
+
+      await Promise.all([socialPromise, seoPromise, visualPromise]);
+    }
 
     onProgress({
       type: "complete",
@@ -83,6 +106,7 @@ export async function runPipeline(
         photoCount,
         topic: req.topic,
         tone: req.tone,
+        mode,
       },
     });
   } catch (e) {

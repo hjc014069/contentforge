@@ -98,7 +98,8 @@ const SYSTEM = `너는 한국 인스타그램 사용자가 직접 쓴 것 같은
 
 export async function runSocial(
   context: Context,
-  tone: Tone
+  tone: Tone,
+  notes?: string
 ): Promise<{ captions: Caption[]; agentMeta: AgentMeta }> {
   // 카테고리별 가이드 동적 주입
   const guide = getCategoryGuide(context.category);
@@ -128,6 +129,7 @@ ${
 - scene_summary: ${context.scene_summary}
 - keywords: ${context.keywords.join(", ")}
 
+${notes && notes.length > 0 ? `\n[사용자 추가 메모]\n"${notes}"\n(이 메모의 구체적 디테일을 캡션에 자연스럽게 녹일 것)\n` : ""}
 위 카테고리(${context.category_label}) 특성과 ${tone} 톤을 모두 반영해서 인스타그램 캡션 3안을 JSON으로 생성해.
 실제 한국 인스타 사용자가 쓴 것처럼 자연스럽게.`;
 

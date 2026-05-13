@@ -1,26 +1,20 @@
 "use client";
 
 /**
- * AgentVisualization — 4명의 에이전트 캐릭터를 표시
- *
- * 구조:
- *   [Planner]
- *      ↓
- *   [Social] [Visual] [SEO]   (병렬로 일하는 3명)
- *
- * 각 캐릭터는 4가지 상태:
- *  - idle: 잠자고 있음 (반투명)
- *  - working: 일하는 중 (위아래로 통통, 보더 빛남)
- *  - done: 완료 (체크 표시)
- *  - skipped: 작업 안 함 (Visual이 사진 1장 이하일 때)
- *
- * Lottie로 교체할 때는 emoji를 <Lottie animationData={...} />로 swap.
+ * AgentVisualization — 활성 에이전트 카드 시각화
+ *   instagram 모드: Planner → (Social + Visual + SEO)
+ *   blog 모드     : Planner → (Writer + Visual + SEO)
  */
 
 import { motion, AnimatePresence } from "framer-motion";
-import type { AgentRole, AgentState, AgentMeta, Provider } from "@/types";
+import type {
+  ActiveAgentRole,
+  AgentState,
+  AgentMeta,
+  ContentMode,
+  Provider,
+} from "@/types";
 
-// 프로바이더 표시 라벨
 const PROVIDER_LABELS: Record<Provider, string> = {
   "github-models": "GitHub Models",
   groq: "Groq",
@@ -34,7 +28,7 @@ const PROVIDER_COLORS: Record<Provider, { bg: string; text: string }> = {
 };
 
 const AGENT_INFO: Record<
-  AgentRole,
+  ActiveAgentRole,
   {
     emoji: string;
     name: string;
@@ -96,9 +90,27 @@ const AGENT_INFO: Record<
     badge: "bg-pink-900/60",
     badgeText: "text-pink-200",
   },
+  writer: {
+    emoji: "📝",
+    name: "Writer",
+    desc: "블로그 본문",
+    workingMsg: "블로그 글 작성 중...",
+    accent: "border-sky-500",
+    glow: "shadow-[0_0_24px_rgba(14,165,233,0.35)]",
+    bg: "bg-sky-950/40",
+    text: "text-sky-300",
+    badge: "bg-sky-900/60",
+    badgeText: "text-sky-200",
+  },
 };
 
-function StateBadge({ state, info }: { state: AgentState; info: typeof AGENT_INFO[AgentRole] }) {
+function StateBadge({
+  state,
+  info,
+}: {
+  state: AgentState;
+  info: (typeof AGENT_INFO)[ActiveAgentRole];
+}) {
   const labels: Record<AgentState, string> = {
     idle: "대기 중",
     working: "작업 중",
@@ -126,9 +138,7 @@ function ProviderBadge({ meta }: { meta: AgentMeta }) {
 
   if (meta.isFallback) {
     return (
-      <span
-        className={`text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-950/60 text-amber-300 border border-amber-700/50`}
-      >
+      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-950/60 text-amber-300 border border-amber-700/50">
         via: {label} (fallback)
       </span>
     );
@@ -147,7 +157,7 @@ function AgentCharacter({
   state,
   meta,
 }: {
-  role: AgentRole;
+  role: ActiveAgentRole;
   state: AgentState;
   meta?: AgentMeta;
 }) {
@@ -234,7 +244,6 @@ function AgentCharacter({
         </AnimatePresence>
       </div>
 
-      {/* 진행 바 */}
       <div className="mt-1 h-1 bg-gray-800 rounded overflow-hidden">
         <motion.div
           className={
@@ -264,17 +273,23 @@ function AgentCharacter({
   );
 }
 
-export type AgentStates = Record<AgentRole, AgentState>;
-export type AgentMetaMap = Partial<Record<AgentRole, AgentMeta>>;
+export type AgentStates = Record<ActiveAgentRole, AgentState>;
+export type AgentMetaMap = Partial<Record<ActiveAgentRole, AgentMeta>>;
 
 export function AgentVisualization({
   states,
   metas,
+  mode = "instagram",
 }: {
   states: AgentStates;
   metas?: AgentMetaMap;
+  mode?: ContentMode;
 }) {
-  // 어느 에이전트라도 fallback이 발생했는지 (배너 표시용)
+  const secondRoleArr: ActiveAgentRole[] =
+    mode === "blog"
+      ? ["writer", "visual", "seo"]
+      : ["social", "visual", "seo"];
+
   const hasAnyFallback = metas
     ? Object.values(metas).some((m) => m?.isFallback)
     : false;
@@ -304,17 +319,14 @@ export function AgentVisualization({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-        <AgentCharacter
-          role="social"
-          state={states.social}
-          meta={metas?.social}
-        />
-        <AgentCharacter
-          role="visual"
-          state={states.visual}
-          meta={metas?.visual}
-        />
-        <AgentCharacter role="seo" state={states.seo} meta={metas?.seo} />
+        {secondRoleArr.map((role) => (
+          <AgentCharacter
+            key={role}
+            role={role}
+            state={states[role]}
+            meta={metas?.[role]}
+          />
+        ))}
       </div>
     </div>
   );

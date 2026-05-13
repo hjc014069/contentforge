@@ -7,6 +7,11 @@ export type Tone = "감성" | "정보" | "유머" | "전문가";
 
 export const TONE_OPTIONS: Tone[] = ["감성", "정보", "유머", "전문가"];
 
+// 콘텐츠 모드 (인스타 / 블로그)
+export type ContentMode = "instagram" | "blog";
+
+export const CONTENT_MODE_OPTIONS: ContentMode[] = ["instagram", "blog"];
+
 // 사진 입력 (서버 사이드에서 사용)
 export type PhotoInput = {
   data: Buffer;
@@ -17,95 +22,128 @@ export type PhotoInput = {
 export type ContentRequest = {
   topic: string;
   tone: Tone;
+  mode?: ContentMode; // 기본 "instagram"
+  notes?: string;     // 자유 메모 — AI가 글 생성에 추가 디테일로 활용
   photos?: PhotoInput[];
 };
 
 // 콘텐츠 카테고리 (Planner가 자동 판별)
 export type Category =
-  | "cafe"     // 카페
-  | "food"     // 음식·맛집
-  | "travel"   // 여행
-  | "daily"    // 일상
-  | "fashion"  // 패션·OOTD
-  | "beauty"   // 뷰티
-  | "fitness"  // 운동·헬스
-  | "other";   // 기타
+  | "cafe"
+  | "food"
+  | "travel"
+  | "daily"
+  | "fashion"
+  | "beauty"
+  | "fitness"
+  | "other";
 
 export const ALL_CATEGORIES: Category[] = [
   "cafe", "food", "travel", "daily", "fashion", "beauty", "fitness", "other",
 ];
 
-// Planner Agent 출력 — 모든 다른 에이전트가 공유하는 컨텍스트
+// Planner Agent 출력
 export type Context = {
-  category: Category;          // 자동 판별된 카테고리
-  category_label: string;       // 한국어 라벨 ("카페", "음식·맛집" 등)
-  target_audience: string;      // 누구에게 말하는지
-  tone_guideline: string;       // 톤 적용 가이드
-  key_messages: string[];       // 핵심 메시지 (3개)
-  scene_summary: string;        // 사진+주제 종합 요약
-  keywords: string[];           // 키워드 (5개)
+  category: Category;
+  category_label: string;
+  target_audience: string;
+  tone_guideline: string;
+  key_messages: string[];
+  scene_summary: string;
+  keywords: string[];
 };
 
-// 어떤 LLM 프로바이더가 응답했는지 (Fallback Pattern용)
+// LLM Provider
 export type Provider = "github-models" | "groq" | "gemini";
 
-// LLM 통합 응답
 export type LLMResponse = {
   content: string;
   provider: Provider;
   model: string;
 };
 
-// 에이전트가 어느 프로바이더로 응답했는지 추적
 export type AgentMeta = {
   provider: Provider;
   model: string;
-  isFallback: boolean;   // 1순위 실패해서 백업으로 동작했는지
+  isFallback: boolean;
 };
 
-// Social Agent 출력 — 캡션 1안
+// Social Agent 출력
 export type Caption = {
-  tone_label: string;     // 변형 라벨 ("메인", "짧은 버전", "풍부한 버전")
-  caption_text: string;   // 캡션 본문 (한국어)
-  length_chars: number;   // 글자 수
+  tone_label: string;
+  caption_text: string;
+  length_chars: number;
 };
 
-// SEO Agent 출력 — 해시태그 20개를 3계층으로
+// SEO Agent 출력
 export type HashtagTiers = {
-  broad: string[];      // 대형 (5개) — 인기 많고 경쟁 큰
-  niche: string[];      // 중형 (10개) — 특정 주제/지역
-  specific: string[];   // 소형 (5개) — 매우 구체적/독특
+  broad: string[];
+  niche: string[];
+  specific: string[];
 };
 
-// Visual Agent 출력 — 사진 순서 추천
+// Visual Agent 출력
 export type PhotoOrderItem = {
-  original_index: number;   // 원본 입력 순서 (0-based)
-  position: number;          // 추천 순서 (1-based)
-  caption_hint: string;      // 사진 짧은 설명 (15자 이내)
-  reason: string;            // 이 위치에 둔 이유
+  original_index: number;
+  position: number;
+  caption_hint: string;
+  reason: string;
 };
 
 export type PhotoOrder = {
   items: PhotoOrderItem[];
-  reasoning: string;         // 전체 스토리 흐름 설명
+  reasoning: string;
+};
+
+// Writer Agent 출력 (블로그 본문)
+export type BlogPost = {
+  title: string;
+  content: string;       // 마크다운 형식 본문 (제목 포함)
+  char_count: number;
 };
 
 // 전체 파이프라인 실행 결과
 export type PipelineResult = {
   context: Context;
-  captions: Caption[];
+  captions: Caption[] | null;     // instagram 모드일 때
+  blog: BlogPost | null;          // blog 모드일 때
   hashtags: HashtagTiers;
-  photoOrder: PhotoOrder | null;   // 사진 2장 이상일 때만 동작
+  photoOrder: PhotoOrder | null;
   meta: {
     durationMs: number;
     photoCount: number;
     topic: string;
     tone: Tone;
+    mode: ContentMode;
   };
 };
 
-// 에이전트 역할
-export type AgentRole = "planner" | "social" | "visual" | "seo";
+// 에이전트 역할 (전체)
+export type AgentRole =
+  | "planner"
+  | "social"
+  | "visual"
+  | "seo"
+  | "writer"
+  | "scripter"
+  | "imagegen";
+
+// 현재 파이프라인에 실제로 참여하는 활성 에이전트
+// (모드에 따라 social 또는 writer 가 활성)
+export type ActiveAgentRole =
+  | "planner"
+  | "social"
+  | "visual"
+  | "seo"
+  | "writer";
+
+export const ACTIVE_AGENT_ROLES: ActiveAgentRole[] = [
+  "planner",
+  "social",
+  "visual",
+  "seo",
+  "writer",
+];
 
 // 에이전트 작업 상태 (UI용)
 export type AgentState = "idle" | "working" | "done" | "skipped";
@@ -121,6 +159,8 @@ export type ProgressEvent =
   | { type: "visual.start" }
   | { type: "visual.done"; photoOrder: PhotoOrder; agentMeta: AgentMeta }
   | { type: "visual.skipped" }
+  | { type: "writer.start" }
+  | { type: "writer.done"; blog: BlogPost; agentMeta: AgentMeta }
   | { type: "complete"; meta: PipelineResult["meta"] }
   | { type: "error"; message: string };
 

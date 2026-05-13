@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   TONE_OPTIONS,
   type Tone,
@@ -8,8 +9,10 @@ import {
   type Caption,
   type HashtagTiers,
   type PhotoOrder,
+  type BlogPost,
+  type ContentMode,
   type ProgressEvent,
-  type AgentRole,
+  type ActiveAgentRole,
   type AgentState,
   type AgentMeta,
 } from "@/types";
@@ -19,6 +22,7 @@ import {
   type AgentStates,
   type AgentMetaMap,
 } from "@/components/AgentVisualization";
+import { OfficeRoom } from "@/components/OfficeRoom";
 
 type ResizedPhoto = {
   blob: Blob;
@@ -38,13 +42,17 @@ const INITIAL_AGENT_STATES: AgentStates = {
   social: "idle",
   visual: "idle",
   seo: "idle",
+  writer: "idle",
 };
 
 export default function Home() {
   const [photos, setPhotos] = useState<ResizedPhoto[]>([]);
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState<Tone>("감성");
+  const [mode, setMode] = useState<ContentMode>("instagram");
+  const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<"office" | "list">("office");
 
   const [agentStates, setAgentStates] = useState<AgentStates>(
     INITIAL_AGENT_STATES
@@ -54,6 +62,7 @@ export default function Home() {
   const [captions, setCaptions] = useState<Caption[] | null>(null);
   const [hashtags, setHashtags] = useState<HashtagTiers | null>(null);
   const [photoOrder, setPhotoOrder] = useState<PhotoOrder | null>(null);
+  const [blog, setBlog] = useState<BlogPost | null>(null);
   const [meta, setMeta] = useState<PipelineMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,13 +99,18 @@ export default function Home() {
     setCaptions(null);
     setHashtags(null);
     setPhotoOrder(null);
+    setBlog(null);
     setMeta(null);
     setError(null);
     setAgentStates(INITIAL_AGENT_STATES);
     setAgentMetas({});
   }
 
-  function setOneAgent(role: AgentRole, state: AgentState, meta?: AgentMeta) {
+  function setOneAgent(
+    role: ActiveAgentRole,
+    state: AgentState,
+    meta?: AgentMeta
+  ) {
     setAgentStates((s) => ({ ...s, [role]: state }));
     if (meta) {
       setAgentMetas((m) => ({ ...m, [role]: meta }));
@@ -136,6 +150,13 @@ export default function Home() {
       case "visual.skipped":
         setOneAgent("visual", "skipped");
         break;
+      case "writer.start":
+        setOneAgent("writer", "working");
+        break;
+      case "writer.done":
+        setOneAgent("writer", "done", event.agentMeta);
+        setBlog(event.blog);
+        break;
       case "complete":
         setMeta(event.meta);
         break;
@@ -152,6 +173,8 @@ export default function Home() {
       const formData = new FormData();
       formData.append("topic", topic);
       formData.append("tone", tone);
+      formData.append("mode", mode);
+      formData.append("notes", notes);
       photos.forEach((p, i) => {
         formData.append("photos", p.blob, `photo-${i}.jpg`);
       });
@@ -217,8 +240,7 @@ export default function Home() {
   }
 
   const canSubmit = !loading && (photos.length > 0 || topic.trim().length > 0);
-  const hasResults = context || captions || hashtags || photoOrder;
-  const showVisualization = loading || hasResults;
+  const hasResults = context || captions || hashtags || photoOrder || blog;
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6 sm:p-10">
@@ -239,6 +261,40 @@ export default function Home() {
           {/* === 입력 영역 === */}
           <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6 lg:sticky lg:top-6 lg:self-start">
             <h2 className="text-lg font-semibold mb-4">입력</h2>
+
+            {/* 모드 토글 */}
+            <div className="mb-5">
+              <label className="text-sm text-gray-400 mb-2 block">콘텐츠 모드</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMode("instagram")}
+                  className={`px-4 py-2 rounded text-sm transition flex items-center justify-center gap-2 ${
+                    mode === "instagram"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  📸 인스타
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("blog")}
+                  className={`px-4 py-2 rounded text-sm transition flex items-center justify-center gap-2 ${
+                    mode === "blog"
+                      ? "bg-sky-600 text-white"
+                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  📝 블로그
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-1.5">
+                {mode === "instagram"
+                  ? "캡션 3안 + 해시태그 + 사진 순서"
+                  : "블로그 본문(마크다운) + 해시태그 + 사진 순서"}
+              </p>
+            </div>
 
             <div className="mb-5">
               <label className="text-sm text-gray-400 mb-2 flex items-center justify-between">
@@ -298,6 +354,23 @@ export default function Home() {
               />
             </div>
 
+            <div className="mb-5">
+              <label className="text-sm text-gray-400 mb-2 block">
+                추가 정보{" "}
+                <span className="text-gray-600">(선택 — AI가 글에 녹임)</span>
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="예: 비 오는 평일, 라떼 6500원, 혼자 두 시간 머묾"
+                rows={2}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm focus:outline-none focus:border-purple-500 resize-none"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">
+                {notes.length}/200자 · 시간/장소/가격/분위기 같은 구체적 디테일을 적어주세요
+              </p>
+            </div>
+
             <div className="mb-6">
               <label className="text-sm text-gray-400 mb-2 block">톤</label>
               <div className="grid grid-cols-2 gap-2">
@@ -343,10 +416,47 @@ export default function Home() {
 
           {/* === 결과 영역 === */}
           <section className="space-y-5">
-            {/* 에이전트 시각화 (작업 중이거나 결과 있으면 표시) */}
-            {showVisualization && (
-              <AgentVisualization states={agentStates} metas={agentMetas} />
-            )}
+            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-3">
+              <div className="flex items-center justify-between mb-3 px-2 pt-1">
+                <div className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
+                  🏢 ContentForge 오피스
+                </div>
+                <div className="inline-flex rounded-lg bg-gray-950 border border-gray-800 p-0.5 text-xs font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("office")}
+                    className={`px-3 py-1 rounded-md transition ${
+                      viewMode === "office"
+                        ? "bg-purple-600 text-white"
+                        : "text-gray-400 hover:text-gray-200"
+                    }`}
+                  >
+                    오피스
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("list")}
+                    className={`px-3 py-1 rounded-md transition ${
+                      viewMode === "list"
+                        ? "bg-purple-600 text-white"
+                        : "text-gray-400 hover:text-gray-200"
+                    }`}
+                  >
+                    카드
+                  </button>
+                </div>
+              </div>
+
+              {viewMode === "office" ? (
+                <OfficeRoom showLabels agentStates={agentStates} />
+              ) : (
+                <AgentVisualization
+                  states={agentStates}
+                  metas={agentMetas}
+                  mode={mode}
+                />
+              )}
+            </div>
 
             {error && (
               <div className="bg-red-950 border border-red-800 rounded-2xl p-5 text-sm text-red-300">
@@ -366,9 +476,7 @@ export default function Home() {
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-2xl">🤔</span>
-                  <h2 className="text-lg font-semibold">
-                    Planner — Context
-                  </h2>
+                  <h2 className="text-lg font-semibold">Planner — Context</h2>
                   <span
                     className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
                       agentMetas.planner?.isFallback
@@ -425,7 +533,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* Social 결과 */}
+            {/* Social 결과 (instagram 모드) */}
             {captions && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <div className="flex items-center gap-2 mb-4">
@@ -475,14 +583,21 @@ export default function Home() {
               </div>
             )}
 
+            {/* Writer 결과 (blog 모드) */}
+            {blog && (
+              <BlogResultCard
+                blog={blog}
+                meta={agentMetas.writer}
+                copyToClipboard={copyToClipboard}
+              />
+            )}
+
             {/* SEO 결과 */}
             {hashtags && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-2xl">🏷️</span>
-                  <h2 className="text-lg font-semibold">
-                    SEO — 해시태그 20개
-                  </h2>
+                  <h2 className="text-lg font-semibold">SEO — 해시태그 20개</h2>
                   <span
                     className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
                       agentMetas.seo?.isFallback
@@ -533,9 +648,7 @@ export default function Home() {
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-2xl">🖼️</span>
-                  <h2 className="text-lg font-semibold">
-                    Visual — 사진 순서 추천
-                  </h2>
+                  <h2 className="text-lg font-semibold">Visual — 사진 순서 추천</h2>
                   <span
                     className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
                       agentMetas.visual?.isFallback
@@ -602,9 +715,138 @@ export default function Home() {
 }
 
 /**
- * agentMeta를 기반으로 사람이 읽기 쉬운 프로바이더 라벨 생성
- * 예: "GitHub Models · gpt-4o-mini", "Gemini · gemini-2.5-flash (fallback)"
+ * BlogResultCard - 블로그 본문 결과 카드
+ * - 가짜 타이핑 효과 (글자 단위로 점진 표시)
+ * - 마크다운 렌더링
+ * - 접기/펼치기
+ * - 복사 버튼 (마크다운 / 플레인 텍스트)
  */
+function BlogResultCard({
+  blog,
+  meta,
+  copyToClipboard,
+}: {
+  blog: BlogPost;
+  meta?: AgentMeta;
+  copyToClipboard: (text: string) => void;
+}) {
+  const [displayed, setDisplayed] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const blogRef = useRef(blog);
+
+  // 글이 바뀌면 타이핑 재시작
+  useEffect(() => {
+    blogRef.current = blog;
+    setDisplayed("");
+    setExpanded(false);
+
+    let i = 0;
+    const total = blog.content.length;
+    // 글자 수에 따라 속도 조절 (총 4~6초 정도)
+    const stepMs = Math.max(8, Math.min(40, 5000 / total));
+    const stepChars = total > 1500 ? 2 : 1;
+
+    const id = setInterval(() => {
+      i += stepChars;
+      if (i >= total) {
+        setDisplayed(blog.content);
+        clearInterval(id);
+      } else {
+        setDisplayed(blog.content.slice(0, i));
+      }
+    }, stepMs);
+    return () => clearInterval(id);
+  }, [blog]);
+
+  const isTyping = displayed.length < blog.content.length;
+  // 접힌 상태: 첫 600자만
+  const shouldCollapse = !expanded && blog.content.length > 600;
+  const visibleContent = shouldCollapse ? displayed.slice(0, 600) : displayed;
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-2xl">📝</span>
+        <h2 className="text-lg font-semibold">Writer — 블로그 본문</h2>
+        <span className="text-xs text-gray-500 font-mono ml-2">
+          {blog.char_count}자
+        </span>
+        <span
+          className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
+            meta?.isFallback
+              ? "bg-amber-950 text-amber-300 border border-amber-700/50"
+              : "bg-sky-950 text-sky-300"
+          }`}
+        >
+          {formatProviderLabel(meta, "GitHub Models")}
+        </span>
+      </div>
+
+      <div className="bg-gray-950 border border-gray-800 rounded-lg p-5 relative">
+        <div
+          className="prose prose-invert prose-sm max-w-none
+                     prose-headings:text-gray-100 prose-headings:font-bold
+                     prose-h1:text-2xl prose-h1:mb-3 prose-h1:mt-0
+                     prose-h2:text-lg prose-h2:mt-5 prose-h2:mb-2 prose-h2:text-sky-300
+                     prose-h3:text-base prose-h3:mt-3 prose-h3:mb-1
+                     prose-p:text-gray-300 prose-p:leading-relaxed prose-p:my-2
+                     prose-strong:text-white
+                     prose-ul:my-2 prose-li:text-gray-300 prose-li:my-0.5"
+        >
+          <ReactMarkdown>{visibleContent}</ReactMarkdown>
+          {isTyping && (
+            <span className="inline-block w-1.5 h-4 bg-sky-400 ml-0.5 align-middle animate-pulse" />
+          )}
+        </div>
+        {shouldCollapse && !isTyping && (
+          <div className="mt-3 pt-3 border-t border-gray-800 text-center">
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="text-xs px-3 py-1.5 bg-sky-900 hover:bg-sky-800 text-sky-200 rounded"
+            >
+              전체 보기 ({blog.content.length}자) ↓
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="text-xs text-gray-500">
+          {isTyping
+            ? `작성 중... ${Math.round(
+                (displayed.length / blog.content.length) * 100
+              )}%`
+            : "작성 완료"}
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => copyToClipboard(blog.content)}
+            className="text-xs px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded"
+          >
+            마크다운 복사
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              copyToClipboard(
+                blog.content
+                  .replace(/^#{1,6}\s+/gm, "")
+                  .replace(/\*\*(.+?)\*\*/g, "$1")
+                  .replace(/^[-*]\s+/gm, "• ")
+              )
+            }
+            className="text-xs px-3 py-1.5 bg-sky-900 hover:bg-sky-800 text-sky-200 rounded"
+          >
+            텍스트 복사
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function formatProviderLabel(
   meta: AgentMeta | undefined,
   defaultLabel: string
@@ -617,7 +859,6 @@ function formatProviderLabel(
   };
   const provider = providerNames[meta.provider] ?? meta.provider;
 
-  // 모델명 짧게 정리 (가독성)
   let modelShort = meta.model;
   if (modelShort.startsWith("openai/")) modelShort = modelShort.slice(7);
   if (modelShort.startsWith("meta/")) modelShort = modelShort.slice(5);
