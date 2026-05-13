@@ -41,7 +41,7 @@
 | 🏷️ **SEO** | 해시태그 20개 — 3계층(대형 5 + 중형 10 + 소형 5) | ✅ |
 | 🖼️ **Visual** | 사진 순서 추천 (사진 2장 이상) | ✅ |
 | 📝 **Writer** | 블로그용 마크다운 본문 (800~1500자) | ✅ |
-| 🎬 **Scripter** | 쇼츠 스크립트 (~60초) | 🚧 |
+| 🎬 **Scripter** | 쇼츠 스크립트 (~60초, hook + scenes 5~7개 + CTA) | ✅ |
 | 🎨 **ImageGen** | AI 이미지 생성 (1~3장) | 🚧 |
 
 ### 🔄 멀티 프로바이더 Fallback
@@ -68,7 +68,7 @@ Vision LLM:   Gemini         →  GitHub Models
 - 📷 **사진** (최대 10장, 클라이언트에서 자동 리사이즈)
 - 💭 **주제** (선택 — 사진만 올려도 OK)
 - 🎨 **톤** 4종: 감성 / 정보 / 유머 / 전문가
-- 📋 **콘텐츠 모드**: 📸 인스타그램 / 📝 블로그
+- 📋 **콘텐츠 모드**: 📸 인스타그램 / 📝 블로그 / 🎬 쇼츠
 - 📝 **자유 메모** (선택) — AI가 본문에 자연스럽게 녹임 (예: "비 오는 평일, 라떼 6500원")
 
 ### 📂 카테고리 자동 판별
@@ -98,9 +98,11 @@ Planner가 사진과 주제를 보고 8개 카테고리 중 자동 선택:
         ┌──────────────────┼──────────────────┐
         ▼                  ▼                  ▼
 ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-│ [2-a] Social  │  │  [2-b] SEO    │  │ [2-c] Visual  │
-│   or Writer   │  │  해시태그 20개  │  │  사진 순서     │
-│ (모드 분기)    │  │               │  │  (병렬)        │
+│ [2-a] Content │  │  [2-b] SEO    │  │ [2-c] Visual  │
+│ Social /      │  │  해시태그 20개  │  │  사진 순서     │
+│ Writer /      │  │               │  │  (병렬)        │
+│ Scripter      │  │               │  │               │
+│ (모드 분기)    │  │               │  │               │
 └───────────────┘  └───────────────┘  └───────────────┘
         │                  │                  │
         └──────────────────┼──────────────────┘
@@ -228,7 +230,7 @@ NDJSON 스트리밍 응답. 각 에이전트의 진행 상태를 실시간으로
 |------|------|------|------|
 | `topic` | string | ❌ | 주제 (사진만 있어도 OK) |
 | `tone` | string | ✅ | 감성 / 정보 / 유머 / 전문가 |
-| `mode` | string | ❌ | instagram (기본) / blog |
+| `mode` | string | ❌ | instagram (기본) / blog / shorts |
 | `notes` | string | ❌ | 자유 메모 |
 | `photos` | File[] | ❌ | 최대 10장 |
 
@@ -243,6 +245,8 @@ social.start    (instagram 모드)
 social.done     { captions, agentMeta }
 writer.start    (blog 모드)
 writer.done     { blog, agentMeta }
+scripter.start  (shorts 모드)
+scripter.done   { shorts, agentMeta }
 seo.start       seo.done     { hashtags, agentMeta }
 visual.start    visual.done  { photoOrder, agentMeta }
 visual.skipped  (사진 < 2장)
@@ -264,7 +268,10 @@ error           { message }
   - [x] 가짜 타이핑 효과 + react-markdown 렌더링
   - [x] 접기/펼치기 + 복사 (마크다운/텍스트)
 - [x] **자유 메모 입력** — 사용자가 추가 디테일 입력하면 모든 에이전트가 활용
-- [ ] **Phase 3** — Scripter 에이전트 + 쇼츠 모드
+- [x] **Phase 3** — Scripter 에이전트 + 쇼츠 모드
+  - [x] 60초 스크립트 (hook + scenes 5~7개 + CTA 구조)
+  - [x] 장면별 visual / voiceover / text_overlay 분리
+  - [x] 스크립트 전체 복사 (plain text 포맷)
 - [ ] **Phase 4** — ImageGen 에이전트 + AI 이미지 생성
 
 ---
@@ -299,6 +306,15 @@ error           { message }
 - 📝 메모: "데이트 코스, 예약 필수"
 
 → 결과: 마크다운 블로그 본문 (1200자) + 맛집 해시태그 + 사진 순서
+
+### 시나리오 3 — 여행 쇼츠 스크립트
+- 📷 사진: 제주 해변, 한라산, 흑돼지
+- 💭 주제: "제주 2박3일 핵심 코스"
+- 🎨 톤: 정보
+- 📋 모드: 🎬 쇼츠
+- 📝 메모: "비행기·렌터카 포함 1인 30만원"
+
+→ 결과: 60초 쇼츠 스크립트 (Hook → Scene 6개 → CTA) + 여행 해시태그 + 사진 순서
 
 ---
 

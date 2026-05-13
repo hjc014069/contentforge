@@ -16,6 +16,7 @@ import { runSocial } from "@/lib/agents/social";
 import { runSeo } from "@/lib/agents/seo";
 import { runVisual } from "@/lib/agents/visual";
 import { runWriter } from "@/lib/agents/writer";
+import { runScripter } from "@/lib/agents/scripter";
 import type {
   ContentRequest,
   ProgressCallback,
@@ -84,6 +85,24 @@ export async function runPipeline(
       })();
 
       await Promise.all([writerPromise, seoPromise, visualPromise]);
+    } else if (mode === "shorts") {
+      // 쇼츠 모드: Scripter + SEO + Visual 병렬
+      const scripterPromise = (async () => {
+        onProgress({ type: "scripter.start" });
+        const result = await runScripter(
+          plannerResult.context,
+          req.tone,
+          photoCount,
+          req.notes
+        );
+        onProgress({
+          type: "scripter.done",
+          shorts: result.shorts,
+          agentMeta: result.agentMeta,
+        });
+      })();
+
+      await Promise.all([scripterPromise, seoPromise, visualPromise]);
     } else {
       // 인스타 모드: Social + SEO + Visual 병렬
       const socialPromise = (async () => {

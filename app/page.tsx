@@ -10,6 +10,7 @@ import {
   type HashtagTiers,
   type PhotoOrder,
   type BlogPost,
+  type ShortsScript,
   type ContentMode,
   type ProgressEvent,
   type ActiveAgentRole,
@@ -43,6 +44,7 @@ const INITIAL_AGENT_STATES: AgentStates = {
   visual: "idle",
   seo: "idle",
   writer: "idle",
+  scripter: "idle",
 };
 
 export default function Home() {
@@ -63,6 +65,7 @@ export default function Home() {
   const [hashtags, setHashtags] = useState<HashtagTiers | null>(null);
   const [photoOrder, setPhotoOrder] = useState<PhotoOrder | null>(null);
   const [blog, setBlog] = useState<BlogPost | null>(null);
+  const [shorts, setShorts] = useState<ShortsScript | null>(null);
   const [meta, setMeta] = useState<PipelineMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,6 +103,7 @@ export default function Home() {
     setHashtags(null);
     setPhotoOrder(null);
     setBlog(null);
+    setShorts(null);
     setMeta(null);
     setError(null);
     setAgentStates(INITIAL_AGENT_STATES);
@@ -156,6 +160,13 @@ export default function Home() {
       case "writer.done":
         setOneAgent("writer", "done", event.agentMeta);
         setBlog(event.blog);
+        break;
+      case "scripter.start":
+        setOneAgent("scripter", "working");
+        break;
+      case "scripter.done":
+        setOneAgent("scripter", "done", event.agentMeta);
+        setShorts(event.shorts);
         break;
       case "complete":
         setMeta(event.meta);
@@ -240,7 +251,7 @@ export default function Home() {
   }
 
   const canSubmit = !loading && (photos.length > 0 || topic.trim().length > 0);
-  const hasResults = context || captions || hashtags || photoOrder || blog;
+  const hasResults = context || captions || hashtags || photoOrder || blog || shorts;
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6 sm:p-10">
@@ -265,11 +276,11 @@ export default function Home() {
             {/* 모드 토글 */}
             <div className="mb-5">
               <label className="text-sm text-gray-400 mb-2 block">콘텐츠 모드</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setMode("instagram")}
-                  className={`px-4 py-2 rounded text-sm transition flex items-center justify-center gap-2 ${
+                  className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
                     mode === "instagram"
                       ? "bg-emerald-600 text-white"
                       : "bg-gray-800 text-gray-300 hover:bg-gray-700"
@@ -280,7 +291,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setMode("blog")}
-                  className={`px-4 py-2 rounded text-sm transition flex items-center justify-center gap-2 ${
+                  className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
                     mode === "blog"
                       ? "bg-sky-600 text-white"
                       : "bg-gray-800 text-gray-300 hover:bg-gray-700"
@@ -288,11 +299,24 @@ export default function Home() {
                 >
                   📝 블로그
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("shorts")}
+                  className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
+                    mode === "shorts"
+                      ? "bg-rose-600 text-white"
+                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  🎬 쇼츠
+                </button>
               </div>
               <p className="text-[11px] text-gray-500 mt-1.5">
                 {mode === "instagram"
                   ? "캡션 3안 + 해시태그 + 사진 순서"
-                  : "블로그 본문(마크다운) + 해시태그 + 사진 순서"}
+                  : mode === "blog"
+                  ? "블로그 본문(마크다운) + 해시태그 + 사진 순서"
+                  : "60초 쇼츠 스크립트(hook+장면+CTA) + 해시태그 + 사진 순서"}
               </p>
             </div>
 
@@ -592,6 +616,15 @@ export default function Home() {
               />
             )}
 
+            {/* Scripter 결과 (shorts 모드) */}
+            {shorts && (
+              <ShortsResultCard
+                shorts={shorts}
+                meta={agentMetas.scripter}
+                copyToClipboard={copyToClipboard}
+              />
+            )}
+
             {/* SEO 결과 */}
             {hashtags && (
               <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
@@ -842,6 +875,137 @@ function BlogResultCard({
             텍스트 복사
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * ShortsResultCard - 쇼츠 스크립트 결과 카드
+ * - 영상 제목 + 총 길이
+ * - Hook 박스 (강조)
+ * - 장면 테이블 (시간/영상/내레이션/자막)
+ * - CTA 박스
+ * - 텍스트 전체 복사
+ */
+function ShortsResultCard({
+  shorts,
+  meta,
+  copyToClipboard,
+}: {
+  shorts: ShortsScript;
+  meta?: AgentMeta;
+  copyToClipboard: (text: string) => void;
+}) {
+  function buildPlainText(): string {
+    const lines: string[] = [];
+    lines.push(`[제목] ${shorts.title}`);
+    lines.push(`[총 길이] ${shorts.total_duration_sec}초`);
+    lines.push("");
+    lines.push(`[HOOK] ${shorts.hook}`);
+    lines.push("");
+    lines.push("[BODY]");
+    shorts.scenes.forEach((s) => {
+      lines.push(`[Scene ${s.index} · ${s.duration_sec}초]`);
+      lines.push(`  영상: ${s.visual}`);
+      lines.push(`  내레이션: ${s.voiceover}`);
+      lines.push(`  자막: ${s.text_overlay}`);
+    });
+    lines.push("");
+    lines.push(`[CTA] ${shorts.cta}`);
+    return lines.join("\n");
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-2xl">🎬</span>
+        <h2 className="text-lg font-semibold">Scripter — 쇼츠 스크립트</h2>
+        <span className="text-xs text-gray-500 font-mono ml-2">
+          ~{shorts.total_duration_sec}초
+        </span>
+        <span
+          className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
+            meta?.isFallback
+              ? "bg-amber-950 text-amber-300 border border-amber-700/50"
+              : "bg-rose-950 text-rose-300"
+          }`}
+        >
+          {formatProviderLabel(meta, "GitHub Models")}
+        </span>
+      </div>
+
+      {/* 제목 */}
+      <div className="bg-gray-950 border border-gray-800 rounded-lg p-4 mb-3">
+        <div className="text-xs text-gray-500 uppercase tracking-wider mb-1 font-semibold">
+          📺 영상 제목
+        </div>
+        <div className="text-base font-bold text-rose-200">{shorts.title}</div>
+      </div>
+
+      {/* Hook */}
+      <div className="bg-rose-950/30 border border-rose-800/50 rounded-lg p-4 mb-3">
+        <div className="text-xs text-rose-400 uppercase tracking-wider mb-1 font-semibold">
+          🪝 HOOK · 첫 5초
+        </div>
+        <p className="text-sm text-rose-100 leading-relaxed">{shorts.hook}</p>
+      </div>
+
+      {/* 장면 테이블 */}
+      <div className="space-y-2 mb-3">
+        {shorts.scenes.map((s) => (
+          <div
+            key={s.index}
+            className="bg-gray-950 border border-gray-800 rounded-lg p-3"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="bg-rose-900/60 text-rose-200 text-xs font-bold px-2 py-0.5 rounded">
+                Scene {s.index}
+              </span>
+              <span className="text-xs text-gray-500 font-mono">
+                {s.duration_sec}초
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+              <div>
+                <div className="text-gray-500 mb-0.5">📷 영상</div>
+                <div className="text-gray-200">{s.visual}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 mb-0.5">🎤 내레이션</div>
+                <div className="text-gray-200">{s.voiceover}</div>
+              </div>
+              <div>
+                <div className="text-gray-500 mb-0.5">💬 자막</div>
+                <div className="text-rose-200 font-semibold">
+                  {s.text_overlay}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* CTA */}
+      <div className="bg-emerald-950/30 border border-emerald-800/50 rounded-lg p-4">
+        <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1 font-semibold">
+          🎯 CTA · 마지막 한 마디
+        </div>
+        <p className="text-sm text-emerald-100">{shorts.cta}</p>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <span className="text-xs text-gray-500">
+          {shorts.scenes.length}개 장면 · 총 {shorts.total_duration_sec}초
+        </span>
+        <button
+          type="button"
+          onClick={() => copyToClipboard(buildPlainText())}
+          className="text-xs px-3 py-1.5 bg-rose-900 hover:bg-rose-800 text-rose-200 rounded"
+        >
+          스크립트 전체 복사
+        </button>
       </div>
     </div>
   );

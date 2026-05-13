@@ -102,6 +102,18 @@ const AGENT_INFO: Record<
     badge: "bg-sky-900/60",
     badgeText: "text-sky-200",
   },
+  scripter: {
+    emoji: "🎬",
+    name: "Scripter",
+    desc: "쇼츠 스크립트",
+    workingMsg: "60초 스크립트 작성 중...",
+    accent: "border-rose-500",
+    glow: "shadow-[0_0_24px_rgba(244,63,94,0.35)]",
+    bg: "bg-rose-950/40",
+    text: "text-rose-300",
+    badge: "bg-rose-900/60",
+    badgeText: "text-rose-200",
+  },
 };
 
 function StateBadge({
@@ -288,6 +300,8 @@ export function AgentVisualization({
   const secondRoleArr: ActiveAgentRole[] =
     mode === "blog"
       ? ["writer", "visual", "seo"]
+      : mode === "shorts"
+      ? ["scripter", "visual", "seo"]
       : ["social", "visual", "seo"];
 
   const hasAnyFallback = metas

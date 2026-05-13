@@ -15,7 +15,7 @@ import type {
 } from "@/types";
 
 const VALID_TONES: Tone[] = ["감성", "정보", "유머", "전문가"];
-const VALID_MODES: ContentMode[] = ["instagram", "blog"];
+const VALID_MODES: ContentMode[] = ["instagram", "blog", "shorts"];
 const MAX_PHOTOS = 10;
 
 export async function POST(req: NextRequest) {

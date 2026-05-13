@@ -8,9 +8,9 @@ export type Tone = "감성" | "정보" | "유머" | "전문가";
 export const TONE_OPTIONS: Tone[] = ["감성", "정보", "유머", "전문가"];
 
 // 콘텐츠 모드 (인스타 / 블로그)
-export type ContentMode = "instagram" | "blog";
+export type ContentMode = "instagram" | "blog" | "shorts";
 
-export const CONTENT_MODE_OPTIONS: ContentMode[] = ["instagram", "blog"];
+export const CONTENT_MODE_OPTIONS: ContentMode[] = ["instagram", "blog", "shorts"];
 
 // 사진 입력 (서버 사이드에서 사용)
 export type PhotoInput = {
@@ -102,11 +102,29 @@ export type BlogPost = {
   char_count: number;
 };
 
+// Scripter Agent 출력 (쇼츠 스크립트, ~60초)
+export type ShortsScene = {
+  index: number;             // 1-based
+  duration_sec: number;      // 이 장면 길이 (초)
+  visual: string;            // 어떤 영상/사진 화면
+  voiceover: string;         // 내레이션
+  text_overlay: string;      // 화면 자막
+};
+
+export type ShortsScript = {
+  title: string;             // 영상 제목
+  total_duration_sec: number; // 총 길이 (~60)
+  hook: string;              // 첫 3~5초 시선 잡는 한 줄
+  scenes: ShortsScene[];     // 장면 5~7개
+  cta: string;               // 마지막 행동 유도
+};
+
 // 전체 파이프라인 실행 결과
 export type PipelineResult = {
   context: Context;
   captions: Caption[] | null;     // instagram 모드일 때
   blog: BlogPost | null;          // blog 모드일 때
+  shorts: ShortsScript | null;    // shorts 모드일 때
   hashtags: HashtagTiers;
   photoOrder: PhotoOrder | null;
   meta: {
@@ -135,7 +153,8 @@ export type ActiveAgentRole =
   | "social"
   | "visual"
   | "seo"
-  | "writer";
+  | "writer"
+  | "scripter";
 
 export const ACTIVE_AGENT_ROLES: ActiveAgentRole[] = [
   "planner",
@@ -143,6 +162,7 @@ export const ACTIVE_AGENT_ROLES: ActiveAgentRole[] = [
   "visual",
   "seo",
   "writer",
+  "scripter",
 ];
 
 // 에이전트 작업 상태 (UI용)
@@ -161,6 +181,8 @@ export type ProgressEvent =
   | { type: "visual.skipped" }
   | { type: "writer.start" }
   | { type: "writer.done"; blog: BlogPost; agentMeta: AgentMeta }
+  | { type: "scripter.start" }
+  | { type: "scripter.done"; shorts: ShortsScript; agentMeta: AgentMeta }
   | { type: "complete"; meta: PipelineResult["meta"] }
   | { type: "error"; message: string };
 
