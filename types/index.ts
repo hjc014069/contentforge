@@ -12,6 +12,18 @@ export type ContentMode = "instagram" | "blog" | "shorts";
 
 export const CONTENT_MODE_OPTIONS: ContentMode[] = ["instagram", "blog", "shorts"];
 
+// 블로그 본문 길이 옵션 (blog 모드 전용)
+export type BlogLength = "short" | "normal" | "long";
+
+export const BLOG_LENGTH_RANGES: Record<
+  BlogLength,
+  { label: string; min: number; max: number }
+> = {
+  short: { label: "짧게", min: 500, max: 800 },
+  normal: { label: "보통", min: 800, max: 1500 },
+  long: { label: "길게", min: 1500, max: 2500 },
+};
+
 // 사진 입력 (서버 사이드에서 사용)
 export type PhotoInput = {
   data: Buffer;
@@ -22,8 +34,9 @@ export type PhotoInput = {
 export type ContentRequest = {
   topic: string;
   tone: Tone;
-  mode?: ContentMode; // 기본 "instagram"
-  notes?: string;     // 자유 메모 — AI가 글 생성에 추가 디테일로 활용
+  modes?: ContentMode[];    // 다중 선택 가능. 기본 ["instagram"]
+  blogLength?: BlogLength;  // blog 모드일 때 글 길이 (기본 "normal")
+  notes?: string;           // 자유 메모 — AI가 글 생성에 추가 디테일로 활용
   photos?: PhotoInput[];
 };
 
@@ -66,6 +79,14 @@ export type AgentMeta = {
   provider: Provider;
   model: string;
   isFallback: boolean;
+};
+
+// 프롬프트 캡처 — 각 에이전트의 입력 프롬프트 + 응답 raw 텍스트
+export type PromptCapture = {
+  system: string;       // 시스템 프롬프트
+  user: string;         // 사용자 프롬프트 (Context, 톤, 메모 주입 후)
+  response: string;     // LLM raw 응답 (보통 JSON 문자열)
+  photoCount?: number;  // Vision 사용 시 사진 개수
 };
 
 // Social Agent 출력
@@ -132,7 +153,7 @@ export type PipelineResult = {
     photoCount: number;
     topic: string;
     tone: Tone;
-    mode: ContentMode;
+    modes: ContentMode[];
   };
 };
 
@@ -171,18 +192,18 @@ export type AgentState = "idle" | "working" | "done" | "skipped";
 // 스트림 이벤트 (실시간 진행 상황)
 export type ProgressEvent =
   | { type: "planner.start" }
-  | { type: "planner.done"; context: Context; agentMeta: AgentMeta }
+  | { type: "planner.done"; context: Context; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "social.start" }
-  | { type: "social.done"; captions: Caption[]; agentMeta: AgentMeta }
+  | { type: "social.done"; captions: Caption[]; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "seo.start" }
-  | { type: "seo.done"; hashtags: HashtagTiers; agentMeta: AgentMeta }
+  | { type: "seo.done"; hashtags: HashtagTiers; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "visual.start" }
-  | { type: "visual.done"; photoOrder: PhotoOrder; agentMeta: AgentMeta }
+  | { type: "visual.done"; photoOrder: PhotoOrder; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "visual.skipped" }
   | { type: "writer.start" }
-  | { type: "writer.done"; blog: BlogPost; agentMeta: AgentMeta }
+  | { type: "writer.done"; blog: BlogPost; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "scripter.start" }
-  | { type: "scripter.done"; shorts: ShortsScript; agentMeta: AgentMeta }
+  | { type: "scripter.done"; shorts: ShortsScript; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "complete"; meta: PipelineResult["meta"] }
   | { type: "error"; message: string };
 

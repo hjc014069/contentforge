@@ -9,7 +9,7 @@
 
 import { callWithFallback } from "@/lib/llm";
 import { getCategoryGuide } from "@/lib/categories";
-import type { ShortsScript, Context, Tone, AgentMeta } from "@/types";
+import type { ShortsScript, Context, Tone, AgentMeta, PromptCapture } from "@/types";
 
 const PRIMARY_PROVIDER = "github-models" as const;
 
@@ -69,7 +69,7 @@ export async function runScripter(
   tone: Tone,
   photoCount: number,
   notes?: string
-): Promise<{ shorts: ShortsScript; agentMeta: AgentMeta }> {
+): Promise<{ shorts: ShortsScript; agentMeta: AgentMeta; promptUsed: PromptCapture }> {
   const guide = getCategoryGuide(context.category);
   const categoryGuideBlock = `
 [카테고리: ${context.category_label}]
@@ -140,6 +140,11 @@ ${notes && notes.length > 0 ? `- 사용자 추가 메모: "${notes}" (이 디테
         provider: response.provider,
         model: response.model,
         isFallback: response.provider !== PRIMARY_PROVIDER,
+      },
+      promptUsed: {
+        system: SYSTEM,
+        user: userPrompt,
+        response: response.content,
       },
     };
   } catch (e) {

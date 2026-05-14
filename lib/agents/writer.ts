@@ -12,7 +12,8 @@
 
 import { callWithFallback } from "@/lib/llm";
 import { getCategoryGuide } from "@/lib/categories";
-import type { BlogPost, Context, Tone, AgentMeta } from "@/types";
+import type { BlogPost, Context, Tone, AgentMeta, PromptCapture, BlogLength } from "@/types";
+import { BLOG_LENGTH_RANGES } from "@/types";
 
 const PRIMARY_PROVIDER = "github-models" as const;
 
@@ -86,8 +87,9 @@ export async function runWriter(
   topic: string,
   tone: Tone,
   photoCount: number,
-  notes?: string
-): Promise<{ blog: BlogPost; agentMeta: AgentMeta }> {
+  notes?: string,
+  blogLength: BlogLength = "normal"
+): Promise<{ blog: BlogPost; agentMeta: AgentMeta; promptUsed: PromptCapture }> {
   const guide = getCategoryGuide(context.category);
   const categoryGuideBlock = `
 [카테고리: ${context.category_label}]
@@ -111,6 +113,9 @@ ${
 - keywords: ${context.keywords.join(", ")}
 - photo_count: ${photoCount}장
 ${notes && notes.length > 0 ? `- 사용자 추가 메모: "${notes}" (이 메모의 디테일을 본문에 자연스럽게 녹일 것 - 시간, 장소, 가격, 분위기 등)` : ""}
+
+[글 길이 요구사항] ${BLOG_LENGTH_RANGES[blogLength].label}: ${BLOG_LENGTH_RANGES[blogLength].min}~${BLOG_LENGTH_RANGES[blogLength].max}자 (마크다운 기호 제외 본문 기준)
+${blogLength === "short" ? "- 핵심만 빠르게. 인트로 + 본문 1~2섹션 + 짧은 마무리." : ""}${blogLength === "long" ? "- 정성스럽게. 인트로 + 본문 3~4섹션 (각 섹션 풍부한 디테일) + 마무리." : ""}
 
 위 카테고리(${context.category_label}) 특성과 ${tone} 톤을 모두 반영해서 한국 블로그 본문을 마크다운 JSON으로 생성해.
 사용자가 직접 쓴 듯 자연스럽고 정성스럽게.`;
@@ -150,6 +155,11 @@ ${notes && notes.length > 0 ? `- 사용자 추가 메모: "${notes}" (이 메모
         provider: response.provider,
         model: response.model,
         isFallback: response.provider !== PRIMARY_PROVIDER,
+      },
+      promptUsed: {
+        system: SYSTEM,
+        user: userPrompt,
+        response: response.content,
       },
     };
   } catch (e) {

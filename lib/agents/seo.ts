@@ -9,7 +9,7 @@
 
 import { callWithFallback } from "@/lib/llm";
 import { getCategoryGuide } from "@/lib/categories";
-import type { HashtagTiers, Context, AgentMeta } from "@/types";
+import type { HashtagTiers, Context, AgentMeta, PromptCapture } from "@/types";
 
 const PRIMARY_PROVIDER = "github-models" as const;
 
@@ -47,7 +47,7 @@ const SYSTEM = `너는 한국 인스타그램에서 실제로 자주 쓰이는 �
 
 export async function runSeo(
   context: Context
-): Promise<{ hashtags: HashtagTiers; agentMeta: AgentMeta }> {
+): Promise<{ hashtags: HashtagTiers; agentMeta: AgentMeta; promptUsed: PromptCapture }> {
   const guide = getCategoryGuide(context.category);
 
   const categoryHint = `
@@ -98,6 +98,11 @@ export async function runSeo(
         provider: response.provider,
         model: response.model,
         isFallback: response.provider !== PRIMARY_PROVIDER,
+      },
+      promptUsed: {
+        system: SYSTEM,
+        user: userPrompt,
+        response: response.content,
       },
     };
   } catch (e) {

@@ -1,17 +1,21 @@
 "use client";
 
 /**
- * AgentVisualization — 활성 에이전트 카드 시각화
+ * AgentVisualization — 카드형 시각화
  *   instagram 모드: Planner → (Social + Visual + SEO)
  *   blog 모드     : Planner → (Writer + Visual + SEO)
+ *   shorts 모드   : Planner → (Scripter + Visual + SEO)
+ *
+ * 각 카드에 "🔍 프롬프트 보기" 토글로 system/user/response 펼침 (B안)
  */
 
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type {
   ActiveAgentRole,
   AgentState,
   AgentMeta,
-  ContentMode,
+  PromptCapture,
   Provider,
 } from "@/types";
 
@@ -147,7 +151,6 @@ function StateBadge({
 function ProviderBadge({ meta }: { meta: AgentMeta }) {
   const colors = PROVIDER_COLORS[meta.provider];
   const label = PROVIDER_LABELS[meta.provider];
-
   if (meta.isFallback) {
     return (
       <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-amber-950/60 text-amber-300 border border-amber-700/50">
@@ -164,21 +167,64 @@ function ProviderBadge({ meta }: { meta: AgentMeta }) {
   );
 }
 
+// 프롬프트 펼치기 영역 (B안)
+function PromptPanel({ prompt }: { prompt: PromptCapture }) {
+  const [openSection, setOpenSection] = useState<"system" | "user" | "response" | null>("user");
+
+  const sections: Array<{ key: "system" | "user" | "response"; label: string; emoji: string }> = [
+    { key: "system", label: "시스템", emoji: "📋" },
+    { key: "user", label: "사용자", emoji: "💬" },
+    { key: "response", label: "응답", emoji: "📤" },
+  ];
+
+  return (
+    <div className="mt-3 border-t border-gray-800 pt-3 space-y-2">
+      <div className="flex gap-1 text-[10px] font-mono">
+        {sections.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setOpenSection(openSection === s.key ? null : s.key)}
+            className={`px-2 py-1 rounded transition ${
+              openSection === s.key
+                ? "bg-purple-700 text-white"
+                : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+            }`}
+          >
+            {s.emoji} {s.label} · {prompt[s.key].length}자
+          </button>
+        ))}
+      </div>
+      {openSection && (
+        <div className="bg-gray-950 border border-gray-800 rounded max-h-60 overflow-y-auto">
+          <pre className="text-[10px] leading-relaxed text-gray-300 font-mono whitespace-pre-wrap p-2.5">
+            {prompt[openSection]}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AgentCharacter({
   role,
   state,
   meta,
+  prompt,
 }: {
   role: ActiveAgentRole;
   state: AgentState;
   meta?: AgentMeta;
+  prompt?: PromptCapture;
 }) {
   const info = AGENT_INFO[role];
+  const [showPrompt, setShowPrompt] = useState(false);
+  const hasPrompt = !!prompt;
 
   return (
     <motion.div
       animate={{
-        opacity: state === "idle" || state === "skipped" ? 0.4 : 1,
+        opacity: state === "idle" || state === "skipped" ? 0.55 : 1,
       }}
       transition={{ duration: 0.4 }}
       className={`relative bg-gray-900 border-2 rounded-2xl p-4 transition-colors ${
@@ -281,6 +327,18 @@ function AgentCharacter({
           }}
         />
       </div>
+
+      {/* 프롬프트 보기 토글 (B안) */}
+      {hasPrompt && (
+        <button
+          type="button"
+          onClick={() => setShowPrompt((s) => !s)}
+          className="mt-3 w-full text-[10px] px-2 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 transition flex items-center justify-center gap-1.5"
+        >
+          🔍 {showPrompt ? "프롬프트 접기" : "프롬프트 보기"}
+        </button>
+      )}
+      {showPrompt && prompt && <PromptPanel prompt={prompt} />}
     </motion.div>
   );
 }
@@ -291,18 +349,18 @@ export type AgentMetaMap = Partial<Record<ActiveAgentRole, AgentMeta>>;
 export function AgentVisualization({
   states,
   metas,
-  mode = "instagram",
+  activeAgents,
+  prompts,
 }: {
   states: AgentStates;
   metas?: AgentMetaMap;
-  mode?: ContentMode;
+  activeAgents: ActiveAgentRole[];
+  prompts?: Partial<Record<ActiveAgentRole, PromptCapture>>;
 }) {
-  const secondRoleArr: ActiveAgentRole[] =
-    mode === "blog"
-      ? ["writer", "visual", "seo"]
-      : mode === "shorts"
-      ? ["scripter", "visual", "seo"]
-      : ["social", "visual", "seo"];
+  // planner 제외한 병렬 에이전트들
+  const secondRoleArr: ActiveAgentRole[] = activeAgents.filter(
+    (r) => r !== "planner"
+  );
 
   const hasAnyFallback = metas
     ? Object.values(metas).some((m) => m?.isFallback)
@@ -324,6 +382,7 @@ export function AgentVisualization({
           role="planner"
           state={states.planner}
           meta={metas?.planner}
+          prompt={prompts?.planner}
         />
       </div>
 
@@ -332,13 +391,22 @@ export function AgentVisualization({
         같은 Context를 3개 에이전트가 병렬로 받음
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <div
+        className="grid grid-cols-1 gap-2"
+        style={{
+          gridTemplateColumns:
+            secondRoleArr.length > 0
+              ? `repeat(${secondRoleArr.length}, minmax(0, 1fr))`
+              : undefined,
+        }}
+      >
         {secondRoleArr.map((role) => (
           <AgentCharacter
             key={role}
             role={role}
             state={states[role]}
             meta={metas?.[role]}
+            prompt={prompts?.[role]}
           />
         ))}
       </div>

@@ -10,7 +10,7 @@
 
 import { callWithFallback, callVisionWithFallback } from "@/lib/llm";
 import { buildCategoryListForPrompt, getCategoryGuide } from "@/lib/categories";
-import type { Context, ContentRequest, AgentMeta, Category } from "@/types";
+import type { Context, ContentRequest, AgentMeta, Category, PromptCapture } from "@/types";
 
 const VISION_PRIMARY = "gemini" as const;
 const TEXT_PRIMARY = "github-models" as const;
@@ -91,7 +91,7 @@ ${buildCategoryListForPrompt()}
 
 export async function runPlanner(
   req: ContentRequest
-): Promise<{ context: Context; agentMeta: AgentMeta }> {
+): Promise<{ context: Context; agentMeta: AgentMeta; promptUsed: PromptCapture }> {
   const photoCount = req.photos?.length ?? 0;
   const hasTopic = req.topic && req.topic.trim().length > 0;
 
@@ -162,7 +162,16 @@ ${topicLine}
       isFallback: response.provider !== primary,
     };
 
-    return { context: parsed, agentMeta };
+    return {
+      context: parsed,
+      agentMeta,
+      promptUsed: {
+        system: PLANNER_SYSTEM,
+        user: userPrompt,
+        response: response.content,
+        photoCount: req.photos?.length,
+      },
+    };
   } catch (e) {
     throw new Error(
       `Planner JSON parsing failed.\nRaw output:\n${response.content}\nError: ${

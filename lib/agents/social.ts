@@ -11,7 +11,7 @@
 
 import { callWithFallback } from "@/lib/llm";
 import { getCategoryGuide } from "@/lib/categories";
-import type { Caption, Context, Tone, AgentMeta } from "@/types";
+import type { Caption, Context, Tone, AgentMeta, PromptCapture } from "@/types";
 
 const PRIMARY_PROVIDER = "github-models" as const;
 
@@ -100,7 +100,7 @@ export async function runSocial(
   context: Context,
   tone: Tone,
   notes?: string
-): Promise<{ captions: Caption[]; agentMeta: AgentMeta }> {
+): Promise<{ captions: Caption[]; agentMeta: AgentMeta; promptUsed: PromptCapture }> {
   // 카테고리별 가이드 동적 주입
   const guide = getCategoryGuide(context.category);
   const categoryGuideBlock = `
@@ -160,6 +160,11 @@ ${notes && notes.length > 0 ? `\n[사용자 추가 메모]\n"${notes}"\n(이 메
         provider: response.provider,
         model: response.model,
         isFallback: response.provider !== PRIMARY_PROVIDER,
+      },
+      promptUsed: {
+        system: SYSTEM,
+        user: userPrompt,
+        response: response.content,
       },
     };
   } catch (e) {

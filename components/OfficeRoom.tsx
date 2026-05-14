@@ -140,6 +140,10 @@ export type OfficeRoomProps = {
   characterWidth?: number;
   forcedDemoMode?: boolean;
   agentStates?: Partial<Record<ActiveAgentRole, AgentState>>;
+  /** 이번 작업에 참여하는 활성 에이전트. 그 외는 wander 유지. */
+  activeAgents?: ActiveAgentRole[];
+  /** done 진입 시각 (부모가 관리, 컴포넌트 마운트와 무관하게 유지) */
+  doneSinceMs?: Partial<Record<ActiveAgentRole, number>>;
 };
 
 export function OfficeRoom({
@@ -148,45 +152,25 @@ export function OfficeRoom({
   characterWidth,
   forcedDemoMode,
   agentStates,
+  activeAgents,
+  doneSinceMs: doneSinceMsProp,
 }: OfficeRoomProps = {}) {
   const { ref, scale } = useScaleToFit(OFFICE_WIDTH);
   const [internalDemo, setInternalDemo] = useState(true);
   const demoMode = forcedDemoMode ?? internalDemo;
 
-  // done 이 된 시점 (role → timestamp) 추적
-  const [doneSinceMs, setDoneSinceMs] = useState<
-    Partial<Record<ActiveAgentRole, number>>
-  >({});
-  // 1초 tick 으로 5초 경과 체크용 re-render
+  // 1초 tick 으로 15초 경과 체크용 re-render
   const [nowMs, setNowMs] = useState(() => Date.now());
+  // doneSinceMs 는 부모에서 관리 (마운트/언마운트 사이에도 유지)
+  const doneSinceMs = doneSinceMsProp ?? {};
 
-  // agentStates 변화 → doneSinceMs 갱신
+  // 15초 카운트용 1초 tick (done 있을 때만 실행)
+  const hasAnyDone = Object.keys(doneSinceMs).length > 0;
   useEffect(() => {
-    setDoneSinceMs((prev) => {
-      const next: Partial<Record<ActiveAgentRole, number>> = { ...prev };
-      let changed = false;
-      for (const role of ACTIVE_AGENT_ROLES_ARR) {
-        const state = agentStates?.[role];
-        if (state === "done") {
-          if (!(role in next)) {
-            next[role] = Date.now();
-            changed = true;
-          }
-        } else if (role in next) {
-          delete next[role];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [agentStates]);
-
-  // 5초 카운트용 1초 tick (done 있을 때만 실행)
-  useEffect(() => {
-    if (Object.keys(doneSinceMs).length === 0) return;
+    if (!hasAnyDone) return;
     const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [doneSinceMs]);
+  }, [hasAnyDone]);
 
   // 파이프라인 진행 중 여부
   const pipelineActive = !!(
@@ -194,8 +178,14 @@ export function OfficeRoom({
     Object.values(agentStates).some((s) => s === "working" || s === "done")
   );
 
+  // 활성 에이전트 (없으면 4명 기본값)
+  const activeRolesForMode = new Set<AgentRole>(
+    activeAgents ?? ["planner", "social", "visual", "seo"]
+  );
+
   function getCharacterMode(role: AgentRole): AnimatedCharacterMode {
-    if (ACTIVE_AGENT_SET.has(role) && agentStates) {
+    const isModeActive = activeRolesForMode.has(role);
+    if (isModeActive && agentStates) {
       const state = agentStates[role as ActiveAgentRole];
       if (state === "working") return "working";
       if (state === "done") {
@@ -208,7 +198,7 @@ export function OfficeRoom({
         return pipelineActive ? "sit" : demoMode ? "wander" : "sit";
       }
     }
-    // 비활성 에이전트
+    // 모드에서 비활성 (예: instagram 모드의 writer/scripter) → 데모 모드 따라 wander
     return demoMode ? "wander" : "sit";
   }
 

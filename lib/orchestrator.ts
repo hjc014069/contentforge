@@ -19,6 +19,7 @@ import { runWriter } from "@/lib/agents/writer";
 import { runScripter } from "@/lib/agents/scripter";
 import type {
   ContentRequest,
+  ContentMode,
   ProgressCallback,
   PipelineResult,
 } from "@/types";
@@ -29,7 +30,7 @@ export async function runPipeline(
 ): Promise<void> {
   const start = Date.now();
   const photoCount = req.photos?.length ?? 0;
-  const mode = req.mode ?? "instagram";
+  const modes: ContentMode[] = req.modes && req.modes.length > 0 ? req.modes : ["instagram"];
 
   try {
     // [1단계] Planner
@@ -39,6 +40,7 @@ export async function runPipeline(
       type: "planner.done",
       context: plannerResult.context,
       agentMeta: plannerResult.agentMeta,
+      promptUsed: plannerResult.promptUsed,
     });
 
     // [2단계] 모드별 분기 ★
@@ -49,6 +51,7 @@ export async function runPipeline(
         type: "seo.done",
         hashtags: result.hashtags,
         agentMeta: result.agentMeta,
+        promptUsed: result.promptUsed,
       });
     })();
 
@@ -63,60 +66,71 @@ export async function runPipeline(
         type: "visual.done",
         photoOrder: result.photoOrder,
         agentMeta: result.agentMeta,
+        promptUsed: result.promptUsed,
       });
     })();
 
-    if (mode === "blog") {
-      // 블로그 모드: Writer + SEO + Visual 병렬
-      const writerPromise = (async () => {
-        onProgress({ type: "writer.start" });
-        const result = await runWriter(
-          plannerResult.context,
-          req.topic,
-          req.tone,
-          photoCount,
-          req.notes
-        );
-        onProgress({
-          type: "writer.done",
-          blog: result.blog,
-          agentMeta: result.agentMeta,
-        });
-      })();
+    // 모드별 콘텐츠 에이전트 promise 동적 구성
+    const contentPromises: Promise<void>[] = [];
 
-      await Promise.all([writerPromise, seoPromise, visualPromise]);
-    } else if (mode === "shorts") {
-      // 쇼츠 모드: Scripter + SEO + Visual 병렬
-      const scripterPromise = (async () => {
-        onProgress({ type: "scripter.start" });
-        const result = await runScripter(
-          plannerResult.context,
-          req.tone,
-          photoCount,
-          req.notes
-        );
-        onProgress({
-          type: "scripter.done",
-          shorts: result.shorts,
-          agentMeta: result.agentMeta,
-        });
-      })();
-
-      await Promise.all([scripterPromise, seoPromise, visualPromise]);
-    } else {
-      // 인스타 모드: Social + SEO + Visual 병렬
-      const socialPromise = (async () => {
-        onProgress({ type: "social.start" });
-        const result = await runSocial(plannerResult.context, req.tone, req.notes);
-        onProgress({
-          type: "social.done",
-          captions: result.captions,
-          agentMeta: result.agentMeta,
-        });
-      })();
-
-      await Promise.all([socialPromise, seoPromise, visualPromise]);
+    if (modes.includes("instagram")) {
+      contentPromises.push(
+        (async () => {
+          onProgress({ type: "social.start" });
+          const result = await runSocial(plannerResult.context, req.tone, req.notes);
+          onProgress({
+            type: "social.done",
+            captions: result.captions,
+            agentMeta: result.agentMeta,
+            promptUsed: result.promptUsed,
+          });
+        })()
+      );
     }
+
+    if (modes.includes("blog")) {
+      contentPromises.push(
+        (async () => {
+          onProgress({ type: "writer.start" });
+          const result = await runWriter(
+            plannerResult.context,
+            req.topic,
+            req.tone,
+            photoCount,
+            req.notes,
+            req.blogLength
+          );
+          onProgress({
+            type: "writer.done",
+            blog: result.blog,
+            agentMeta: result.agentMeta,
+            promptUsed: result.promptUsed,
+          });
+        })()
+      );
+    }
+
+    if (modes.includes("shorts")) {
+      contentPromises.push(
+        (async () => {
+          onProgress({ type: "scripter.start" });
+          const result = await runScripter(
+            plannerResult.context,
+            req.tone,
+            photoCount,
+            req.notes
+          );
+          onProgress({
+            type: "scripter.done",
+            shorts: result.shorts,
+            agentMeta: result.agentMeta,
+            promptUsed: result.promptUsed,
+          });
+        })()
+      );
+    }
+
+    await Promise.all([...contentPromises, seoPromise, visualPromise]);
 
     onProgress({
       type: "complete",
@@ -125,7 +139,7 @@ export async function runPipeline(
         photoCount,
         topic: req.topic,
         tone: req.tone,
-        mode,
+        modes,
       },
     });
   } catch (e) {

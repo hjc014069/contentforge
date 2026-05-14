@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   TONE_OPTIONS,
   type Tone,
@@ -12,10 +13,13 @@ import {
   type BlogPost,
   type ShortsScript,
   type ContentMode,
+  type BlogLength,
+  BLOG_LENGTH_RANGES,
   type ProgressEvent,
   type ActiveAgentRole,
   type AgentState,
   type AgentMeta,
+  type PromptCapture,
 } from "@/types";
 import { resizeImage } from "@/lib/utils/resize";
 import {
@@ -24,6 +28,10 @@ import {
   type AgentMetaMap,
 } from "@/components/AgentVisualization";
 import { OfficeRoom } from "@/components/OfficeRoom";
+import { getActiveAgents } from "@/lib/utils/activeAgents";
+import { ProgressBanner } from "@/components/ProgressBanner";
+import { ResultCard } from "@/components/ResultCard";
+import { PromptFlowView } from "@/components/PromptFlowView";
 
 type ResizedPhoto = {
   blob: Blob;
@@ -51,10 +59,11 @@ export default function Home() {
   const [photos, setPhotos] = useState<ResizedPhoto[]>([]);
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState<Tone>("감성");
-  const [mode, setMode] = useState<ContentMode>("instagram");
+  const [modes, setModes] = useState<ContentMode[]>([]);
+  const [blogLength, setBlogLength] = useState<BlogLength>("normal");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<"office" | "list">("office");
+  const [viewMode, setViewMode] = useState<"office" | "list" | "prompts">("office");
 
   const [agentStates, setAgentStates] = useState<AgentStates>(
     INITIAL_AGENT_STATES
@@ -66,6 +75,11 @@ export default function Home() {
   const [photoOrder, setPhotoOrder] = useState<PhotoOrder | null>(null);
   const [blog, setBlog] = useState<BlogPost | null>(null);
   const [shorts, setShorts] = useState<ShortsScript | null>(null);
+  const [prompts, setPrompts] = useState<Partial<Record<ActiveAgentRole, PromptCapture>>>({});
+  // done 된 시점 기록 (모드 전환 시에도 유지되어야 OfficeRoom 의 15초 카운트가 정확함)
+  const [doneSinceMs, setDoneSinceMs] = useState<Partial<Record<ActiveAgentRole, number>>>({});
+  // 실행 시점에 캡처된 활성 에이전트 (시각화 표시용 — 실행 후 입력 변경되어도 유지)
+  const [runAgents, setRunAgents] = useState<ActiveAgentRole[]>([]);
   const [meta, setMeta] = useState<PipelineMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +104,28 @@ export default function Home() {
     setPhotos((prev) => [...prev, ...resized]);
   }
 
+  const [isDragging, setIsDragging] = useState(false);
+
+  function handleDragOver(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    if (photos.length >= MAX_PHOTOS) return;
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    setIsDragging(false);
+    if (photos.length >= MAX_PHOTOS) return;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
+  }
+
   function removePhoto(idx: number) {
     setPhotos((prev) => {
       URL.revokeObjectURL(prev[idx].previewUrl);
@@ -104,6 +140,9 @@ export default function Home() {
     setPhotoOrder(null);
     setBlog(null);
     setShorts(null);
+    setPrompts({});
+    setDoneSinceMs({});
+    setRunAgents([]);
     setMeta(null);
     setError(null);
     setAgentStates(INITIAL_AGENT_STATES);
@@ -119,6 +158,17 @@ export default function Home() {
     if (meta) {
       setAgentMetas((m) => ({ ...m, [role]: meta }));
     }
+    // done 진입 시점 기록 (15초 후 wander 카운트용)
+    if (state === "done") {
+      setDoneSinceMs((d) => (role in d ? d : { ...d, [role]: Date.now() }));
+    } else {
+      setDoneSinceMs((d) => {
+        if (!(role in d)) return d;
+        const next = { ...d };
+        delete next[role];
+        return next;
+      });
+    }
   }
 
   function handleEvent(event: ProgressEvent) {
@@ -129,6 +179,8 @@ export default function Home() {
       case "planner.done":
         setOneAgent("planner", "done", event.agentMeta);
         setContext(event.context);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, planner: event.promptUsed }));
         break;
       case "social.start":
         setOneAgent("social", "working");
@@ -136,6 +188,8 @@ export default function Home() {
       case "social.done":
         setOneAgent("social", "done", event.agentMeta);
         setCaptions(event.captions);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, social: event.promptUsed }));
         break;
       case "seo.start":
         setOneAgent("seo", "working");
@@ -143,6 +197,8 @@ export default function Home() {
       case "seo.done":
         setOneAgent("seo", "done", event.agentMeta);
         setHashtags(event.hashtags);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, seo: event.promptUsed }));
         break;
       case "visual.start":
         setOneAgent("visual", "working");
@@ -150,6 +206,8 @@ export default function Home() {
       case "visual.done":
         setOneAgent("visual", "done", event.agentMeta);
         setPhotoOrder(event.photoOrder);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, visual: event.promptUsed }));
         break;
       case "visual.skipped":
         setOneAgent("visual", "skipped");
@@ -160,6 +218,8 @@ export default function Home() {
       case "writer.done":
         setOneAgent("writer", "done", event.agentMeta);
         setBlog(event.blog);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, writer: event.promptUsed }));
         break;
       case "scripter.start":
         setOneAgent("scripter", "working");
@@ -167,6 +227,8 @@ export default function Home() {
       case "scripter.done":
         setOneAgent("scripter", "done", event.agentMeta);
         setShorts(event.shorts);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, scripter: event.promptUsed }));
         break;
       case "complete":
         setMeta(event.meta);
@@ -178,14 +240,21 @@ export default function Home() {
   }
 
   async function handleSubmit() {
+    if (modes.length === 0) {
+      alert("콘텐츠 모드를 하나 이상 선택해주세요. (📸 인스타 / 📝 블로그 / 🎬 쇼츠)");
+      return;
+    }
     setLoading(true);
     resetResults();
+    // 실행 시점에 활성 에이전트 캡처 (이후 입력 변경되어도 시각화는 이 시점 기준)
+    setRunAgents(getActiveAgents({ modes, photoCount: photos.length }));
     try {
       const formData = new FormData();
       formData.append("topic", topic);
       formData.append("tone", tone);
-      formData.append("mode", mode);
+      formData.append("modes", JSON.stringify(modes));
       formData.append("notes", notes);
+      formData.append("blogLength", blogLength);
       photos.forEach((p, i) => {
         formData.append("photos", p.blob, `photo-${i}.jpg`);
       });
@@ -252,6 +321,10 @@ export default function Home() {
 
   const canSubmit = !loading && (photos.length > 0 || topic.trim().length > 0);
   const hasResults = context || captions || hashtags || photoOrder || blog || shorts;
+  // 현재 입력 기준 활성 에이전트 (다음 실행 예상치 — 입력 영역 표시용)
+  const previewAgents = getActiveAgents({ modes, photoCount: photos.length });
+  // 시각화에 사용할 활성 에이전트: 실행했으면 캡처된 runAgents, 아니면 미리보기
+  const activeAgents = runAgents.length > 0 ? runAgents : previewAgents;
 
   return (
     <main className="min-h-screen bg-gray-950 text-gray-100 p-6 sm:p-10">
@@ -270,55 +343,112 @@ export default function Home() {
 
         <div className="grid lg:grid-cols-[400px_1fr] gap-6">
           {/* === 입력 영역 === */}
-          <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6 lg:sticky lg:top-6 lg:self-start">
-            <h2 className="text-lg font-semibold mb-4">입력</h2>
+          <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] flex flex-col">
+            <h2 className="text-lg font-semibold mb-4 flex-shrink-0">입력</h2>
+            <div className="flex-1 overflow-y-auto scrollbar-hide -mr-2 pr-2">
 
-            {/* 모드 토글 */}
+            {/* 모드 다중 선택 */}
             <div className="mb-5">
-              <label className="text-sm text-gray-400 mb-2 block">콘텐츠 모드</label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMode("instagram")}
-                  className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
-                    mode === "instagram"
-                      ? "bg-emerald-600 text-white"
-                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  📸 인스타
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("blog")}
-                  className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
-                    mode === "blog"
-                      ? "bg-sky-600 text-white"
-                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  📝 블로그
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("shorts")}
-                  className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
-                    mode === "shorts"
-                      ? "bg-rose-600 text-white"
-                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  🎬 쇼츠
-                </button>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm text-gray-400">콘텐츠 모드 (다중 선택)</label>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setModes(["instagram", "blog", "shorts"])}
+                    className="text-[10px] px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+                  >
+                    전부
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModes([])}
+                    className="text-[10px] px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+                  >
+                    초기화
+                  </button>
+                </div>
               </div>
-              <p className="text-[11px] text-gray-500 mt-1.5">
-                {mode === "instagram"
-                  ? "캡션 3안 + 해시태그 + 사진 순서"
-                  : mode === "blog"
-                  ? "블로그 본문(마크다운) + 해시태그 + 사진 순서"
-                  : "60초 쇼츠 스크립트(hook+장면+CTA) + 해시태그 + 사진 순서"}
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { key: "instagram", emoji: "📸", label: "인스타", color: "emerald" },
+                    { key: "blog", emoji: "📝", label: "블로그", color: "sky" },
+                    { key: "shorts", emoji: "🎬", label: "쇼츠", color: "rose" },
+                  ] as const
+                ).map((m) => {
+                  const selected = modes.includes(m.key);
+                  const colorBg: Record<string, string> = {
+                    emerald: "bg-emerald-600",
+                    sky: "bg-sky-600",
+                    rose: "bg-rose-600",
+                  };
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => {
+                        setModes((prev) =>
+                          prev.includes(m.key)
+                            ? prev.filter((x) => x !== m.key)
+                            : [...prev, m.key]
+                        );
+                      }}
+                      className={`px-3 py-2 rounded text-sm transition flex items-center justify-center gap-1 ${
+                        selected
+                          ? `${colorBg[m.color]} text-white shadow-md scale-[1.02]`
+                          : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                      }`}
+                    >
+                      {selected && <span className="text-xs">✓</span>}
+                      {m.emoji} {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className={`text-[11px] mt-1.5 ${modes.length === 0 ? "text-amber-400" : "text-gray-500"}`}>
+                {modes.length === 0 && "⚠️ 모드를 하나 이상 선택하세요"}
+                {modes.length === 1 && modes[0] === "instagram" && "캡션 3안 + 해시태그 + 사진 순서"}
+                {modes.length === 1 && modes[0] === "blog" && "블로그 본문(마크다운) + 해시태그 + 사진 순서"}
+                {modes.length === 1 && modes[0] === "shorts" && "60초 쇼츠 스크립트 + 해시태그 + 사진 순서"}
+                {modes.length > 1 && `${modes.length}개 콘텐츠 동시 생성 — 한 입력으로 ${modes.length}가지 결과`}
               </p>
             </div>
+
+            {/* 블로그 모드 전용: 글 길이 토글 */}
+            {modes.includes("blog") && (
+              <div className="mb-5">
+                <label className="text-sm text-gray-400 mb-2 block">
+                  글 길이
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["short", "normal", "long"] as BlogLength[]).map((len) => {
+                    const r = BLOG_LENGTH_RANGES[len];
+                    const selected = blogLength === len;
+                    return (
+                      <button
+                        key={len}
+                        type="button"
+                        onClick={() => setBlogLength(len)}
+                        className={`px-2 py-2 rounded text-sm transition-all flex flex-col items-center gap-0.5 ${
+                          selected
+                            ? "bg-sky-600 text-white shadow-lg shadow-sky-600/30 scale-[1.02]"
+                            : "bg-gray-800 text-gray-300 hover:bg-gray-700 hover:scale-[1.01]"
+                        }`}
+                      >
+                        <span className="font-semibold">{r.label}</span>
+                        <span
+                          className={`text-[10px] font-mono ${
+                            selected ? "text-sky-200" : "text-gray-500"
+                          }`}
+                        >
+                          {r.min}~{r.max}자
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="mb-5">
               <label className="text-sm text-gray-400 mb-2 flex items-center justify-between">
@@ -327,17 +457,43 @@ export default function Home() {
                   {photos.length}/{MAX_PHOTOS}
                 </span>
               </label>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => {
-                  handleFiles(e.target.files);
-                  e.target.value = "";
-                }}
-                disabled={photos.length >= MAX_PHOTOS}
-                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-purple-600 file:text-white file:cursor-pointer hover:file:bg-purple-700 disabled:opacity-50"
-              />
+              <label
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`block w-full px-4 py-5 border-2 border-dashed rounded-lg text-center text-sm transition-all cursor-pointer ${
+                  photos.length >= MAX_PHOTOS
+                    ? "border-gray-800 bg-gray-900/50 text-gray-600 cursor-not-allowed"
+                    : isDragging
+                    ? "border-purple-400 bg-purple-950/40 text-purple-200 scale-[1.01]"
+                    : "border-gray-700 bg-gray-800/30 text-gray-400 hover:border-purple-500 hover:bg-purple-950/20 hover:text-purple-300"
+                }`}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    handleFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                  disabled={photos.length >= MAX_PHOTOS}
+                  className="hidden"
+                />
+                <div className="flex flex-col items-center gap-1 pointer-events-none">
+                  <span className="text-2xl">{isDragging ? "📥" : "📷"}</span>
+                  <span className="font-semibold">
+                    {photos.length >= MAX_PHOTOS
+                      ? "최대 개수 도달"
+                      : isDragging
+                      ? "여기에 놓으세요"
+                      : "사진을 선택하세요"}
+                  </span>
+                  <span className={`text-[11px] ${isDragging ? "text-purple-300" : "text-gray-500"}`}>
+                    클릭 또는 파일 끌어다 놓기
+                  </span>
+                </div>
+              </label>
               {photos.length > 0 && (
                 <div className="grid grid-cols-5 gap-2 mt-3">
                   {photos.map((p, i) => (
@@ -346,7 +502,7 @@ export default function Home() {
                       <img
                         src={p.previewUrl}
                         alt={p.filename}
-                        className="w-full aspect-square object-cover rounded border border-gray-800"
+                        className="w-full aspect-square object-cover rounded border border-gray-800 transition-transform group-hover:scale-105"
                       />
                       <button
                         type="button"
@@ -374,7 +530,7 @@ export default function Home() {
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="예: 신촌 카페 탐방"
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm focus:outline-none focus:border-purple-500"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm transition-colors focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
               />
             </div>
 
@@ -388,7 +544,7 @@ export default function Home() {
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="예: 비 오는 평일, 라떼 6500원, 혼자 두 시간 머묾"
                 rows={2}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm focus:outline-none focus:border-purple-500 resize-none"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm transition-colors focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 resize-none"
               />
               <p className="text-[11px] text-gray-500 mt-1">
                 {notes.length}/200자 · 시간/장소/가격/분위기 같은 구체적 디테일을 적어주세요
@@ -398,40 +554,71 @@ export default function Home() {
             <div className="mb-6">
               <label className="text-sm text-gray-400 mb-2 block">톤</label>
               <div className="grid grid-cols-2 gap-2">
-                {TONE_OPTIONS.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTone(t)}
-                    className={`px-4 py-2 rounded text-sm transition ${
-                      tone === t
-                        ? "bg-purple-600 text-white"
-                        : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
+                {TONE_OPTIONS.map((t) => {
+                  const toneInfo: Record<string, { emoji: string; desc: string }> = {
+                    "감성": { emoji: "🌿", desc: "잔잔·시적" },
+                    "정보": { emoji: "📊", desc: "구체·실용" },
+                    "유머": { emoji: "😂", desc: "위트·반전" },
+                    "전문가": { emoji: "🧑‍🎓", desc: "분석·신뢰" },
+                  };
+                  const info = toneInfo[t];
+                  const selected = tone === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTone(t)}
+                      className={`px-3 py-2.5 rounded text-sm transition-all flex flex-col items-center gap-0.5 ${
+                        selected
+                          ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30 scale-[1.02]"
+                          : "bg-gray-800 text-gray-300 hover:bg-gray-700 hover:scale-[1.01]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span>{info.emoji}</span>
+                        <span className="font-semibold">{t}</span>
+                      </span>
+                      <span className={`text-[10px] ${selected ? "text-purple-200" : "text-gray-500"}`}>
+                        {info.desc}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
+            </div>
             <button
               type="button"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-semibold transition"
+              className="mt-4 flex-shrink-0 w-full py-3 rounded-lg font-semibold transition-all
+                         bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600
+                         hover:from-purple-500 hover:via-fuchsia-500 hover:to-pink-500
+                         hover:shadow-lg hover:shadow-purple-600/40 hover:scale-[1.01]
+                         disabled:from-gray-700 disabled:via-gray-700 disabled:to-gray-700
+                         disabled:hover:scale-100 disabled:hover:shadow-none
+                         disabled:cursor-not-allowed
+                         active:scale-[0.99]"
             >
-              {loading ? "에이전트 작동 중..." : "▶ 콘텐츠 생성"}
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />
+                  에이전트 작동 중...
+                </span>
+              ) : (
+                "▶ 콘텐츠 생성"
+              )}
             </button>
 
             {!canSubmit && !loading && (
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 mt-2 flex-shrink-0">
                 사진이나 주제 중 최소 하나는 입력해야 합니다.
               </p>
             )}
 
             {meta && (
-              <div className="mt-5 pt-4 border-t border-gray-800 text-xs text-gray-500 font-mono">
+              <div className="mt-5 pt-4 border-t border-gray-800 text-xs text-gray-500 font-mono flex-shrink-0">
                 <div>전체 시간: {meta.durationMs}ms</div>
                 <div>사진: {meta.photoCount}장</div>
               </div>
@@ -455,7 +642,7 @@ export default function Home() {
                         : "text-gray-400 hover:text-gray-200"
                     }`}
                   >
-                    오피스
+                    🏢 오피스
                   </button>
                   <button
                     type="button"
@@ -466,21 +653,67 @@ export default function Home() {
                         : "text-gray-400 hover:text-gray-200"
                     }`}
                   >
-                    카드
+                    🃏 카드
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode("prompts")}
+                    className={`px-3 py-1 rounded-md transition ${
+                      viewMode === "prompts"
+                        ? "bg-purple-600 text-white"
+                        : "text-gray-400 hover:text-gray-200"
+                    }`}
+                  >
+                    🧠 프롬프트
                   </button>
                 </div>
               </div>
 
-              {viewMode === "office" ? (
-                <OfficeRoom showLabels agentStates={agentStates} />
-              ) : (
+              {viewMode === "office" && (
+                <OfficeRoom showLabels agentStates={agentStates} activeAgents={activeAgents} doneSinceMs={doneSinceMs} />
+              )}
+              {viewMode === "list" && (
                 <AgentVisualization
                   states={agentStates}
                   metas={agentMetas}
-                  mode={mode}
+                  activeAgents={activeAgents}
+                  prompts={prompts}
+                />
+              )}
+              {viewMode === "prompts" && (
+                <PromptFlowView
+                  prompts={prompts}
+                  metas={agentMetas}
+                  activeAgents={activeAgents}
+                  modes={modes}
+                  userInput={{
+                    topic,
+                    tone,
+                    notes,
+                    photoCount: photos.length,
+                  }}
                 />
               )}
             </div>
+
+            {/* 파이프라인 진행 상태 — 오피스 박스와 결과 카드 사이 */}
+            <AnimatePresence>
+              {(loading || hasResults) && (
+                <motion.div
+                  key="progress-banner"
+                  initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                  transition={{ duration: 0.35, ease: "easeOut" }}
+                >
+                  <ProgressBanner
+                    states={agentStates}
+                    activeAgents={activeAgents}
+                    loading={loading}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {error && (
               <div className="bg-red-950 border border-red-800 rounded-2xl p-5 text-sm text-red-300">
@@ -497,20 +730,13 @@ export default function Home() {
 
             {/* Planner 결과 */}
             {context && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-2xl">🤔</span>
-                  <h2 className="text-lg font-semibold">Planner — Context</h2>
-                  <span
-                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
-                      agentMetas.planner?.isFallback
-                        ? "bg-amber-950 text-amber-300 border border-amber-700/50"
-                        : "bg-purple-950 text-purple-300"
-                    }`}
-                  >
-                    {formatProviderLabel(agentMetas.planner, "Gemini Vision")}
-                  </span>
-                </div>
+              <ResultCard
+                emoji="🤔"
+                title="Planner — Context"
+                accent="purple"
+                meta={agentMetas.planner}
+                defaultProviderLabel="Gemini Vision"
+              >
                 <div className="space-y-4">
                   <div>
                     <FieldLabel>📂 Category</FieldLabel>
@@ -554,27 +780,19 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </ResultCard>
             )}
 
             {/* Social 결과 (instagram 모드) */}
             {captions && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-2xl">✍️</span>
-                  <h2 className="text-lg font-semibold">
-                    Social — 캡션 {captions.length}안
-                  </h2>
-                  <span
-                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
-                      agentMetas.social?.isFallback
-                        ? "bg-amber-950 text-amber-300 border border-amber-700/50"
-                        : "bg-emerald-950 text-emerald-300"
-                    }`}
-                  >
-                    {formatProviderLabel(agentMetas.social, "GitHub Models")}
-                  </span>
-                </div>
+              <ResultCard
+                emoji="✍️"
+                title="Social — 캡션"
+                subtitle={`${captions.length}안`}
+                accent="emerald"
+                meta={agentMetas.social}
+                defaultProviderLabel="GitHub Models"
+              >
                 <div className="space-y-3">
                   {captions.map((c, i) => (
                     <div
@@ -604,7 +822,7 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </ResultCard>
             )}
 
             {/* Writer 결과 (blog 모드) */}
@@ -627,20 +845,14 @@ export default function Home() {
 
             {/* SEO 결과 */}
             {hashtags && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-2xl">🏷️</span>
-                  <h2 className="text-lg font-semibold">SEO — 해시태그 20개</h2>
-                  <span
-                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
-                      agentMetas.seo?.isFallback
-                        ? "bg-amber-950 text-amber-300 border border-amber-700/50"
-                        : "bg-pink-950 text-pink-300"
-                    }`}
-                  >
-                    {formatProviderLabel(agentMetas.seo, "GitHub Models")}
-                  </span>
-                </div>
+              <ResultCard
+                emoji="🏷️"
+                title="SEO — 해시태그"
+                subtitle="20개"
+                accent="pink"
+                meta={agentMetas.seo}
+                defaultProviderLabel="GitHub Models"
+              >
                 <div className="space-y-4">
                   <HashtagTier
                     label="대형 (인기 · 경쟁 큰)"
@@ -673,41 +885,34 @@ export default function Home() {
                     전체 복사
                   </button>
                 </div>
-              </div>
+              </ResultCard>
             )}
 
             {/* Visual 결과 */}
             {photoOrder && (
-              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-2xl">🖼️</span>
-                  <h2 className="text-lg font-semibold">Visual — 사진 순서 추천</h2>
-                  <span
-                    className={`ml-auto text-xs px-2 py-1 rounded font-mono ${
-                      agentMetas.visual?.isFallback
-                        ? "bg-orange-950 text-orange-300 border border-orange-700/50"
-                        : "bg-amber-950 text-amber-300"
-                    }`}
-                  >
-                    {formatProviderLabel(agentMetas.visual, "Gemini Vision")}
-                  </span>
-                </div>
+              <ResultCard
+                emoji="🖼️"
+                title="Visual — 사진 순서 추천"
+                accent="amber"
+                meta={agentMetas.visual}
+                defaultProviderLabel="Gemini Vision"
+              >
 
-                <div className="flex gap-3 overflow-x-auto pb-2 mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-4">
                   {photoOrder.items.map((item) => {
                     const photo = photos[item.original_index];
                     return (
-                      <div key={item.position} className="flex-shrink-0 w-36">
+                      <div key={item.position} className="w-full">
                         <div className="relative">
                           {photo ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={photo.previewUrl}
                               alt={item.caption_hint}
-                              className="w-36 h-36 object-cover rounded border border-gray-700"
+                              className="w-full aspect-square object-cover rounded border border-gray-700"
                             />
                           ) : (
-                            <div className="w-36 h-36 bg-gray-800 rounded flex items-center justify-center text-gray-500 text-xs">
+                            <div className="w-full aspect-square bg-gray-800 rounded flex items-center justify-center text-gray-500 text-xs">
                               (사진 없음)
                             </div>
                           )}
@@ -734,7 +939,7 @@ export default function Home() {
                     {photoOrder.reasoning}
                   </p>
                 </div>
-              </div>
+              </ResultCard>
             )}
           </section>
         </div>

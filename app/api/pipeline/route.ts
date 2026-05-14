@@ -9,6 +9,7 @@ import { runPipeline } from "@/lib/orchestrator";
 import type {
   Tone,
   ContentMode,
+  BlogLength,
   PhotoInput,
   ContentRequest,
   ProgressEvent,
@@ -23,8 +24,11 @@ export async function POST(req: NextRequest) {
 
   const topicRaw = formData.get("topic")?.toString() ?? "";
   const toneRaw = formData.get("tone")?.toString() ?? "";
-  const modeRaw = formData.get("mode")?.toString() ?? "instagram";
+  // modes 는 JSON 배열 문자열 또는 단일 mode 호환
+  const modesRaw = formData.get("modes")?.toString() ?? "";
+  const singleModeRaw = formData.get("mode")?.toString() ?? "";
   const notesRaw = formData.get("notes")?.toString() ?? "";
+  const blogLengthRaw = formData.get("blogLength")?.toString() ?? "normal";
   const fileEntries = formData.getAll("photos");
 
   if (!VALID_TONES.includes(toneRaw as Tone)) {
@@ -40,9 +44,34 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const mode: ContentMode = VALID_MODES.includes(modeRaw as ContentMode)
-    ? (modeRaw as ContentMode)
-    : "instagram";
+  // 다중 모드 파싱
+  let parsedModes: ContentMode[] = [];
+  if (modesRaw) {
+    try {
+      const arr = JSON.parse(modesRaw);
+      if (Array.isArray(arr)) {
+        parsedModes = arr.filter((m): m is ContentMode =>
+          VALID_MODES.includes(m as ContentMode)
+        );
+      }
+    } catch {
+      // ignore parse error
+    }
+  }
+  // 단일 mode fallback (구버전 호환)
+  if (parsedModes.length === 0 && VALID_MODES.includes(singleModeRaw as ContentMode)) {
+    parsedModes = [singleModeRaw as ContentMode];
+  }
+  // 기본값
+  const modes: ContentMode[] =
+    parsedModes.length > 0 ? parsedModes : ["instagram"];
+
+  const VALID_BLOG_LENGTHS: BlogLength[] = ["short", "normal", "long"];
+  const blogLength: BlogLength = VALID_BLOG_LENGTHS.includes(
+    blogLengthRaw as BlogLength
+  )
+    ? (blogLengthRaw as BlogLength)
+    : "normal";
 
   const photos: PhotoInput[] = [];
   for (const entry of fileEntries) {
@@ -59,7 +88,8 @@ export async function POST(req: NextRequest) {
   const request: ContentRequest = {
     topic: topicRaw.trim(),
     tone: toneRaw as Tone,
-    mode,
+    modes,
+    blogLength,
     notes: notesRaw.trim() || undefined,
     photos: photos.length > 0 ? photos : undefined,
   };

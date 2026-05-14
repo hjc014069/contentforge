@@ -9,7 +9,7 @@
  */
 
 import { callVisionWithFallback } from "@/lib/llm";
-import type { Context, PhotoOrder, PhotoInput, AgentMeta } from "@/types";
+import type { Context, PhotoOrder, PhotoInput, AgentMeta, PromptCapture } from "@/types";
 
 const VISION_PRIMARY = "gemini" as const;
 
@@ -60,7 +60,7 @@ const SYSTEM = `너는 인스타그램 캐러셀(여러 장 슬라이드 게시�
 export async function runVisual(
   photos: PhotoInput[],
   context: Context
-): Promise<{ photoOrder: PhotoOrder; agentMeta: AgentMeta }> {
+): Promise<{ photoOrder: PhotoOrder; agentMeta: AgentMeta; promptUsed: PromptCapture }> {
   if (photos.length < 2) {
     throw new Error("Visual Agent는 사진 2장 이상에서만 동작합니다.");
   }
@@ -106,7 +106,16 @@ export async function runVisual(
       isFallback: response.provider !== VISION_PRIMARY,
     };
 
-    return { photoOrder: parsed, agentMeta };
+    return {
+      photoOrder: parsed,
+      agentMeta,
+      promptUsed: {
+        system: SYSTEM,
+        user: userPrompt,
+        response: response.content,
+        photoCount: photos.length,
+      },
+    };
   } catch (e) {
     throw new Error(
       `Visual JSON parsing failed.\nRaw output:\n${response.content}\nError: ${
