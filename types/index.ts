@@ -37,6 +37,7 @@ export type ContentRequest = {
   modes?: ContentMode[];    // 다중 선택 가능. 기본 ["instagram"]
   blogLength?: BlogLength;  // blog 모드일 때 글 길이 (기본 "normal")
   notes?: string;           // 자유 메모 — AI가 글 생성에 추가 디테일로 활용
+  generateImage?: boolean;  // AI 이미지 추가 생성 여부 (기본 false)
   photos?: PhotoInput[];
 };
 
@@ -67,7 +68,7 @@ export type Context = {
 };
 
 // LLM Provider
-export type Provider = "github-models" | "groq" | "gemini";
+export type Provider = "github-models" | "groq" | "gemini" | "pollinations";
 
 export type LLMResponse = {
   content: string;
@@ -123,6 +124,19 @@ export type BlogPost = {
   char_count: number;
 };
 
+// ImageGen Agent 출력 (AI 생성 이미지)
+export type GeneratedImage = {
+  url: string;          // 이미지 URL (외부 호스팅) 또는 data URL
+  prompt: string;       // 실제 사용된 영문 프롬프트
+  width: number;
+  height: number;
+};
+
+export type GeneratedImageSet = {
+  images: GeneratedImage[];
+  base_prompt: string;  // Context 기반 만든 영문 프롬프트
+};
+
 // Scripter Agent 출력 (쇼츠 스크립트, ~60초)
 export type ShortsScene = {
   index: number;             // 1-based
@@ -146,6 +160,7 @@ export type PipelineResult = {
   captions: Caption[] | null;     // instagram 모드일 때
   blog: BlogPost | null;          // blog 모드일 때
   shorts: ShortsScript | null;    // shorts 모드일 때
+  generatedImages: GeneratedImageSet | null; // generateImage=true 일 때
   hashtags: HashtagTiers;
   photoOrder: PhotoOrder | null;
   meta: {
@@ -175,7 +190,8 @@ export type ActiveAgentRole =
   | "visual"
   | "seo"
   | "writer"
-  | "scripter";
+  | "scripter"
+  | "imagegen";
 
 export const ACTIVE_AGENT_ROLES: ActiveAgentRole[] = [
   "planner",
@@ -184,6 +200,7 @@ export const ACTIVE_AGENT_ROLES: ActiveAgentRole[] = [
   "seo",
   "writer",
   "scripter",
+  "imagegen",
 ];
 
 // 에이전트 작업 상태 (UI용)
@@ -204,6 +221,8 @@ export type ProgressEvent =
   | { type: "writer.done"; blog: BlogPost; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "scripter.start" }
   | { type: "scripter.done"; shorts: ShortsScript; agentMeta: AgentMeta; promptUsed?: PromptCapture }
+  | { type: "imagegen.start" }
+  | { type: "imagegen.done"; generatedImages: GeneratedImageSet; agentMeta: AgentMeta; promptUsed?: PromptCapture }
   | { type: "complete"; meta: PipelineResult["meta"] }
   | { type: "error"; message: string };
 

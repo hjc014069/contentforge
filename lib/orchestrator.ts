@@ -17,6 +17,7 @@ import { runSeo } from "@/lib/agents/seo";
 import { runVisual } from "@/lib/agents/visual";
 import { runWriter } from "@/lib/agents/writer";
 import { runScripter } from "@/lib/agents/scripter";
+import { runImageGen } from "@/lib/agents/imagegen";
 import type {
   ContentRequest,
   ContentMode,
@@ -130,7 +131,27 @@ export async function runPipeline(
       );
     }
 
-    await Promise.all([...contentPromises, seoPromise, visualPromise]);
+    // ImageGen 옵션: generateImage=true 일 때만 호출
+    const imagenPromise =
+      req.generateImage
+        ? (async () => {
+            onProgress({ type: "imagegen.start" });
+            const result = await runImageGen(plannerResult.context, req.notes);
+            onProgress({
+              type: "imagegen.done",
+              generatedImages: result.generatedImages,
+              agentMeta: result.agentMeta,
+              promptUsed: result.promptUsed,
+            });
+          })()
+        : Promise.resolve();
+
+    await Promise.all([
+      ...contentPromises,
+      seoPromise,
+      visualPromise,
+      imagenPromise,
+    ]);
 
     onProgress({
       type: "complete",

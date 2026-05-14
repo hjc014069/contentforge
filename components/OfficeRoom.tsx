@@ -71,6 +71,7 @@ const ACTIVE_AGENT_ROLES_ARR: ActiveAgentRole[] = [
   "seo",
   "writer",
   "scripter",
+  "imagegen",
 ];
 
 const ACTIVE_AGENT_SET = new Set<AgentRole>(ACTIVE_AGENT_ROLES_ARR);

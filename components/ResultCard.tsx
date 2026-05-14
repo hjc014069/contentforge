@@ -39,6 +39,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   "github-models": "GitHub Models",
   groq: "Groq",
   gemini: "Gemini",
+  pollinations: "Pollinations",
 };
 
 export function formatProviderLabel(

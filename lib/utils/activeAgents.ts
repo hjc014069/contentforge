@@ -17,6 +17,7 @@ import type { ActiveAgentRole, ContentMode } from "@/types";
 export type ActiveAgentsInput = {
   modes: ContentMode[];
   photoCount: number;
+  generateImage?: boolean;
 };
 
 /**
@@ -36,6 +37,9 @@ export function getActiveAgents(input: ActiveAgentsInput): ActiveAgentRole[] {
   if (input.photoCount >= 2) list.push("visual");
 
   list.push("seo");
+
+  // ImageGen 은 사용자가 옵션 활성화 했을 때만
+  if (input.generateImage) list.push("imagegen");
 
   return list;
 }

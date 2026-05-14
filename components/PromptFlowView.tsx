@@ -50,6 +50,7 @@ const AGENT_INFO: Record<
   scripter: { emoji: "🎬", name: "Scripter", color: "text-rose-300", bg: "bg-rose-950/40", border: "border-rose-700/50" },
   visual: { emoji: "🖼️", name: "Visual", color: "text-amber-300", bg: "bg-amber-950/40", border: "border-amber-700/50" },
   seo: { emoji: "🏷️", name: "SEO", color: "text-pink-300", bg: "bg-pink-950/40", border: "border-pink-700/50" },
+  imagegen: { emoji: "🎨", name: "ImageGen", color: "text-fuchsia-300", bg: "bg-fuchsia-950/40", border: "border-fuchsia-700/50" },
 };
 
 // 펼치기/접기 가능한 코드 블록

@@ -78,6 +78,14 @@ const STAGE_INFO: Record<
     ring: "ring-pink-400/60",
     glow: "shadow-[0_0_18px_rgba(236,72,153,0.5)]",
   },
+  imagegen: {
+    emoji: "🎨",
+    name: "ImageGen",
+    color: "bg-fuchsia-500",
+    light: "text-fuchsia-300",
+    ring: "ring-fuchsia-400/60",
+    glow: "shadow-[0_0_18px_rgba(217,70,239,0.5)]",
+  },
 };
 
 // 캐릭터 노드 (원형 아이콘 + 라벨)

@@ -23,12 +23,14 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   "github-models": "GitHub Models",
   groq: "Groq",
   gemini: "Gemini",
+  pollinations: "Pollinations",
 };
 
 const PROVIDER_COLORS: Record<Provider, { bg: string; text: string }> = {
   "github-models": { bg: "bg-blue-950/60", text: "text-blue-300" },
   groq: { bg: "bg-orange-950/60", text: "text-orange-300" },
   gemini: { bg: "bg-cyan-950/60", text: "text-cyan-300" },
+  pollinations: { bg: "bg-fuchsia-950/60", text: "text-fuchsia-300" },
 };
 
 const AGENT_INFO: Record<
@@ -117,6 +119,18 @@ const AGENT_INFO: Record<
     text: "text-rose-300",
     badge: "bg-rose-900/60",
     badgeText: "text-rose-200",
+  },
+  imagegen: {
+    emoji: "🎨",
+    name: "ImageGen",
+    desc: "AI 이미지 생성",
+    workingMsg: "이미지 생성 중...",
+    accent: "border-fuchsia-500",
+    glow: "shadow-[0_0_24px_rgba(217,70,239,0.35)]",
+    bg: "bg-fuchsia-950/40",
+    text: "text-fuchsia-300",
+    badge: "bg-fuchsia-900/60",
+    badgeText: "text-fuchsia-200",
   },
 };
 

@@ -12,6 +12,7 @@ import {
   type PhotoOrder,
   type BlogPost,
   type ShortsScript,
+  type GeneratedImageSet,
   type ContentMode,
   type BlogLength,
   BLOG_LENGTH_RANGES,
@@ -53,6 +54,7 @@ const INITIAL_AGENT_STATES: AgentStates = {
   seo: "idle",
   writer: "idle",
   scripter: "idle",
+  imagegen: "idle",
 };
 
 export default function Home() {
@@ -62,6 +64,7 @@ export default function Home() {
   const [modes, setModes] = useState<ContentMode[]>([]);
   const [blogLength, setBlogLength] = useState<BlogLength>("normal");
   const [notes, setNotes] = useState("");
+  const [generateImage, setGenerateImage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"office" | "list" | "prompts">("office");
 
@@ -75,6 +78,7 @@ export default function Home() {
   const [photoOrder, setPhotoOrder] = useState<PhotoOrder | null>(null);
   const [blog, setBlog] = useState<BlogPost | null>(null);
   const [shorts, setShorts] = useState<ShortsScript | null>(null);
+  const [generatedImages, setGeneratedImages] = useState<GeneratedImageSet | null>(null);
   const [prompts, setPrompts] = useState<Partial<Record<ActiveAgentRole, PromptCapture>>>({});
   // done 된 시점 기록 (모드 전환 시에도 유지되어야 OfficeRoom 의 15초 카운트가 정확함)
   const [doneSinceMs, setDoneSinceMs] = useState<Partial<Record<ActiveAgentRole, number>>>({});
@@ -140,6 +144,7 @@ export default function Home() {
     setPhotoOrder(null);
     setBlog(null);
     setShorts(null);
+    setGeneratedImages(null);
     setPrompts({});
     setDoneSinceMs({});
     setRunAgents([]);
@@ -230,6 +235,15 @@ export default function Home() {
         if (event.promptUsed)
           setPrompts((p) => ({ ...p, scripter: event.promptUsed }));
         break;
+      case "imagegen.start":
+        setOneAgent("imagegen", "working");
+        break;
+      case "imagegen.done":
+        setOneAgent("imagegen", "done", event.agentMeta);
+        setGeneratedImages(event.generatedImages);
+        if (event.promptUsed)
+          setPrompts((p) => ({ ...p, imagegen: event.promptUsed }));
+        break;
       case "complete":
         setMeta(event.meta);
         break;
@@ -247,13 +261,14 @@ export default function Home() {
     setLoading(true);
     resetResults();
     // 실행 시점에 활성 에이전트 캡처 (이후 입력 변경되어도 시각화는 이 시점 기준)
-    setRunAgents(getActiveAgents({ modes, photoCount: photos.length }));
+    setRunAgents(getActiveAgents({ modes, photoCount: photos.length, generateImage }));
     try {
       const formData = new FormData();
       formData.append("topic", topic);
       formData.append("tone", tone);
       formData.append("modes", JSON.stringify(modes));
       formData.append("notes", notes);
+      formData.append("generateImage", String(generateImage));
       formData.append("blogLength", blogLength);
       photos.forEach((p, i) => {
         formData.append("photos", p.blob, `photo-${i}.jpg`);
@@ -320,9 +335,9 @@ export default function Home() {
   }
 
   const canSubmit = !loading && (photos.length > 0 || topic.trim().length > 0);
-  const hasResults = context || captions || hashtags || photoOrder || blog || shorts;
+  const hasResults = context || captions || hashtags || photoOrder || blog || shorts || generatedImages;
   // 현재 입력 기준 활성 에이전트 (다음 실행 예상치 — 입력 영역 표시용)
-  const previewAgents = getActiveAgents({ modes, photoCount: photos.length });
+  const previewAgents = getActiveAgents({ modes, photoCount: photos.length, generateImage });
   // 시각화에 사용할 활성 에이전트: 실행했으면 캡처된 runAgents, 아니면 미리보기
   const activeAgents = runAgents.length > 0 ? runAgents : previewAgents;
 
@@ -549,6 +564,26 @@ export default function Home() {
               <p className="text-[11px] text-gray-500 mt-1">
                 {notes.length}/200자 · 시간/장소/가격/분위기 같은 구체적 디테일을 적어주세요
               </p>
+            </div>
+
+            {/* AI 이미지 생성 옵션 */}
+            <div className="mb-5">
+              <label className="flex items-start gap-2.5 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={generateImage}
+                  onChange={(e) => setGenerateImage(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded accent-fuchsia-600 cursor-pointer"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-300 group-hover:text-gray-100 transition">
+                    🎨 AI 이미지도 함께 생성
+                  </div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    Context 기반 대표 이미지 1장 (GitHub Models · 실패 시 Pollinations)
+                  </div>
+                </div>
+              </label>
             </div>
 
             <div className="mb-6">
@@ -941,6 +976,49 @@ export default function Home() {
                 </div>
               </ResultCard>
             )}
+
+            {/* AI 이미지 결과 */}
+            {generatedImages && (
+              <ResultCard
+                emoji="🎨"
+                title="ImageGen — AI 이미지"
+                subtitle={`${generatedImages.images.length}장`}
+                accent="purple"
+                meta={agentMetas.imagegen}
+                defaultProviderLabel="GitHub Models"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                  {generatedImages.images.map((img, i) => (
+                    <div key={i} className="space-y-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.url}
+                        alt={`generated-${i + 1}`}
+                        className="w-full aspect-square object-cover rounded border border-gray-700"
+                        loading="lazy"
+                      />
+                      <a
+                        href={img.url}
+                        download={`contentforge-image-${i + 1}.png`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-center text-xs px-3 py-1.5 bg-fuchsia-900 hover:bg-fuchsia-800 text-fuchsia-200 rounded"
+                      >
+                        ⬇ 다운로드
+                      </a>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-gray-950 border border-gray-800 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wider mb-1 font-semibold">
+                    🎯 이미지 프롬프트 (영문)
+                  </div>
+                  <p className="text-xs text-gray-300 leading-relaxed font-mono break-all">
+                    {generatedImages.base_prompt}
+                  </p>
+                </div>
+              </ResultCard>
+            )}
           </section>
         </div>
 
@@ -1225,6 +1303,7 @@ function formatProviderLabel(
     "github-models": "GitHub Models",
     groq: "Groq",
     gemini: "Gemini",
+    pollinations: "Pollinations",
   };
   const provider = providerNames[meta.provider] ?? meta.provider;
 

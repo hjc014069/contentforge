@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
   const singleModeRaw = formData.get("mode")?.toString() ?? "";
   const notesRaw = formData.get("notes")?.toString() ?? "";
   const blogLengthRaw = formData.get("blogLength")?.toString() ?? "normal";
+  const generateImageRaw = formData.get("generateImage")?.toString() ?? "false";
   const fileEntries = formData.getAll("photos");
 
   if (!VALID_TONES.includes(toneRaw as Tone)) {
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
     modes,
     blogLength,
     notes: notesRaw.trim() || undefined,
+    generateImage: generateImageRaw === "true",
     photos: photos.length > 0 ? photos : undefined,
   };
 
